@@ -59,19 +59,30 @@ class Fish(
     var tilt: Float = 0f
     var justAte: Boolean = false
     var age: Float = 0f
-    var activity: Float = 1f
+    var activity: Float = 0.9f + rng.nextFloat() * 0.2f
     var tailHz: Float = 1f
         private set
     /**
      * Accumulated tail phase. Multiplying absolute uptime by a changing frequency
      * would make the phase jump whenever the fish accelerates or slows.
      */
-    var tailPhase: Float = 0f
+    var tailPhase: Float = rng.nextFloat() * 6.2831855f
         private set
 
     // Swim speed scales with apparent body length. A 0.8-body stride keeps the
     // tail beat and the distance travelled in the same physical relationship.
     private val cruiseFactor: Float = 0.65f + rng.nextFloat() * 0.25f
+    // Every fish gets its own metabolic tempo and beat character. The old shared
+    // 0.7 rad/s activity sine made a whole tank slow down and speed up together,
+    // and the common speed-to-tail mapping made the beats look choreographed.
+    private val cruiseTempo: Float = 0.35f + rng.nextFloat() * 0.65f
+    private val cruiseSwing: Float = 0.06f + rng.nextFloat() * 0.12f
+    private val cruiseBase: Float = 0.90f + rng.nextFloat() * 0.12f
+    private val chaseActivity: Float = 1.60f + rng.nextFloat() * 0.45f
+    private val burstActivity: Float = 1.40f + rng.nextFloat() * 0.30f
+    private val tailTempo: Float = 0.88f + rng.nextFloat() * 0.24f
+    private val beatWobbleRate: Float = 0.30f + rng.nextFloat() * 0.50f
+    private val beatWobbleAmount: Float = 0.02f + rng.nextFloat() * 0.05f
     private val minX = 26f + baseDrawWidth * 0.5f
     private val maxX = width - 26f - baseDrawWidth * 0.5f
     private val minY = 34f + baseDrawHeight * 0.45f
@@ -118,9 +129,9 @@ class Fish(
             }
         }
         val targetActivity = when {
-            chasing -> 1.9f
-            burstRemaining > 0f -> 1.55f
-            else -> 0.95f + 0.08f * sin(age * 0.7f + phase)
+            chasing -> chaseActivity
+            burstRemaining > 0f -> burstActivity
+            else -> cruiseBase + cruiseSwing * sin(age * cruiseTempo + phase)
         }
         activity += (targetActivity - activity) * (dt * 2.5f).coerceAtMost(1f)
 
@@ -174,7 +185,9 @@ class Fish(
         // advances roughly 0.8 body lengths per tail beat, so a fish that barely
         // moves cannot keep beating its tail at full speed.
         val speed = hypot(vx, vy)
-        tailHz = (speed / (drawWidth * 0.8f)).coerceIn(0.45f, 1.8f)
+        val baseBeat = speed / (drawWidth * 0.8f) * tailTempo
+        val beatWobble = 1f + beatWobbleAmount * sin(age * beatWobbleRate + phase * 1.7f)
+        tailHz = (baseBeat * beatWobble).coerceIn(0.45f, 1.8f)
         tailPhase = (tailPhase + dt * tailHz * 6.2831855f) % 6.2831855f
         val desiredTilt = atan2(vy, abs(vx) + 18f).coerceIn(-0.22f, 0.22f)
         // Smooth the pitch instead of snapping the whole sprite around; sudden

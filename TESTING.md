@@ -11,7 +11,7 @@ a JDK and the Android SDK; instrumented tests need an Android device or emulator
 |------|----------------|
 | `HttpRequestReaderTest` | request line/query parsing, case-insensitive headers, exact binary bodies, truncated bodies, oversized bodies, expired request deadline, malformed traffic |
 | `FishRepositoryTest` | fish survive a repository restart, overlapping repository instances cannot overwrite each other, JSON persistence, name sanitisation, 64-fish cap, corrupt index recovery, missing-PNG recovery, delete semantics |
-| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves and the full water column; depth changes apparent size without escaping the tank |
+| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and multiple fish do not beat in lockstep; whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves and the full water column; depth changes apparent size without escaping the tank |
 | `AquariumSceneTest` (Robolectric, native Skia) | the real scene renders a non-black, colourful frame; a fish changes the frame; 2.5 s of updates changes it again; food sinks, expires and feeding recovers; theme switching rebuilds a different layout without losing fish and reverse cycling wraps; a fully transparent sprite is skipped without crashing; debug PNGs are written |
 | `FishServerRobolectricTest` | real HTTP server + PNG decoding + callbacks + JSON listing + delete; non-PNG rejection; UDP discovery beacon reply |
 
@@ -153,7 +153,7 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
 
 ## Current verification status (2026-11-10)
 
-- **79 JVM/Robolectric tests, 0 failures** — 35 in `aquarium-tv`, 44 in `fish-scanner`.
+- **80 JVM/Robolectric tests, 0 failures** — 36 in `aquarium-tv`, 44 in `fish-scanner`.
 - **8 instrumented tests, 0 failures** — 2 tank tests and 6 scanner tests, run on both
   a **Pixel 7 (Android 16 / API 37)** and the **Chromecast HD (Android 14 / API 34)**.
   The tank suite was re-run on the Chromecast after the sizing fix: 2/2 passed. They

@@ -78,8 +78,10 @@ class FishTest {
         )
         val rng = Random(42)
         var previousTilt = fish.tilt
+        var fastestCruise = 0f
         repeat(3_000) {
             fish.update(1f / 30f, null, rng)
+            fastestCruise = maxOf(fastestCruise, abs(fish.vx))
             assertTrue("tail beat out of range: ${fish.tailHz}", fish.tailHz in 0.45f..1.8f)
             assertTrue(
                 "whole-body pitch jumped ${abs(fish.tilt - previousTilt)} rad in one frame",
@@ -88,11 +90,51 @@ class FishTest {
             previousTilt = fish.tilt
         }
         val speed = hypot(fish.vx, fish.vy)
-        val expected = (speed / (fish.drawWidth * 0.8f)).coerceIn(0.45f, 1.8f)
-        assertEquals(expected, fish.tailHz, 0.0001f)
+        val base = speed / (fish.drawWidth * 0.8f)
+        val lower = (base * 0.84f).coerceAtLeast(0.45f)
+        val upper = (base * 1.22f).coerceAtMost(1.8f)
         assertTrue(
-            "cruise speed should scale with body length, was ${fish.vx}",
-            abs(fish.vx) > 20f
+            "tail beat must still follow swim speed: base=$base actual=${fish.tailHz}",
+            fish.tailHz in lower..upper
+        )
+        assertTrue(
+            "cruise speed should scale with body length, peak was $fastestCruise",
+            fastestCruise > 20f
+        )
+    }
+
+    @Test
+    fun fishDoNotBeatTheirTailsInLockstep() {
+        val bitmap = sprite()
+        val rng = Random(91)
+        val school = (0 until 8).map { index ->
+            Fish(
+                meta = FishMeta("school-$index", "Nemo $index", "", "right", 1L, 120, 60),
+                bitmap = bitmap,
+                width = 640f,
+                height = 360f,
+                sandY = 302f,
+                rng = rng
+            )
+        }
+        val tau = 6.2831855f
+        val initialOffsets = school.map { (it.tailPhase + it.phase) % tau }
+        repeat(900) { school.forEach { it.update(1f / 30f, null, rng) } }
+        val finalOffsets = school.map { (it.tailPhase + it.phase) % tau }
+        var largestOffsetShift = 0f
+        for (index in 0 until school.size - 1) {
+            val before = initialOffsets[index + 1] - initialOffsets[index]
+            val after = finalOffsets[index + 1] - finalOffsets[index]
+            largestOffsetShift = maxOf(largestOffsetShift, abs(after - before))
+        }
+        assertTrue(
+            "the school kept a fixed tail-phase relationship: shift=$largestOffsetShift",
+            largestOffsetShift > 0.05f
+        )
+        val rates = school.map { it.tailHz }
+        assertTrue(
+            "all fish beat at nearly the same rate: ${rates.minOrNull()}..${rates.maxOrNull()}",
+            rates.maxOrNull()!! - rates.minOrNull()!! > 0.02f
         )
     }
 

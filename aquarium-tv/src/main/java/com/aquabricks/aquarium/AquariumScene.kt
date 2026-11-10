@@ -41,6 +41,9 @@ class AquariumScene(
     private var banner: Banner? = null
     private var bannerAge = 0f
     private val rand = Random(0x5EED_F15)
+    // Scenery stays reproducible, but fish get a fresh random character each
+    // launch: tail phase, tempo and activity rhythm must not be choreographed.
+    private val fishRand = Random(System.nanoTime())
 
     private var theme: AquariumTheme = AquariumTheme.REEF
     private var palette: ScenePalette = paletteFor(AquariumTheme.REEF)
@@ -177,7 +180,7 @@ class AquariumScene(
             return null
         }
         val newFish = try {
-            Fish(meta, bitmap, width.toFloat(), height.toFloat(), sandY, rand)
+            Fish(meta, bitmap, width.toFloat(), height.toFloat(), sandY, fishRand)
         } catch (error: Exception) {
             android.util.Log.w("AquariumScene", "Skipping unreadable fish ${meta.name}", error)
             return null
@@ -245,7 +248,7 @@ class AquariumScene(
 
         for (f in fish) {
             val target = nearestFood(f)
-            f.update(dt, target, rand)
+            f.update(dt, target, fishRand)
             if (target != null && target.eaten) spawnBubbles(target.x, target.y, 4)
             if (f.activity > 1.35f && rand.nextFloat() < dt * 0.9f) {
                 val direction = if (f.facingRight) -1f else 1f

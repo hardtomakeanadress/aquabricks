@@ -80,8 +80,10 @@ dist/            copied APKs after a build
   body bends smoothly, and the tail beat frequency follows the actual swim speed.
   Whole-body pitch is smoothed; there is no yaw oscillation or body stretching.
   Direction changes ease through an edge-on turn instead of an instant mirror flip.
-  Fish prefer distant waypoints, so they roam both halves and the full water
-  column. Occasional bursts, depth scaling and shadows remain.
+  Each fish has its own tail phase, tempo and activity rhythm, so a school does not
+  beat, slow down or dart in lockstep. Fish prefer distant waypoints, so they roam
+  both halves and the full water column. Occasional bursts, depth scaling and
+  shadows remain.
 - Fish also move through a depth axis: they swim toward and away from the glass,
   shrinking, fading slightly and sitting higher when farther away. Far fish are
   drawn first and near fish last.
