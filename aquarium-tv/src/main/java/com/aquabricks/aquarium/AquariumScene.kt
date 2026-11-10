@@ -7,6 +7,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.Shader
@@ -28,7 +29,13 @@ import kotlin.random.Random
  */
 class AquariumScene(
     private val width: Int,
-    private val height: Int
+    private val height: Int,
+    private val aiBackdrops: Map<AquariumTheme, Bitmap> = emptyMap(),
+    private val aiTreasure: Bitmap? = null,
+    private val aiReeds: Bitmap? = null,
+    private val aiTurtle: Bitmap? = null,
+    private val aiLeaf: Bitmap? = null,
+    private val aiShark: Bitmap? = null
 ) {
 
     val fish = ArrayList<Fish>()
@@ -51,6 +58,15 @@ class AquariumScene(
     val currentTheme: AquariumTheme get() = theme
 
     private val sandY = height * 0.84f
+
+    /** Called after the shark removes a fish, so the caller can delete it from disk. */
+    var onFishEaten: ((FishMeta) -> Unit)? = null
+    private val sharkSprite: Bitmap = aiShark ?: Shark.renderSprite()
+    private val shark = Shark(width.toFloat(), height.toFloat(), sandY, sharkSprite, rand)
+    private var sharkTimer = 55f + rand.nextFloat() * 30f
+    private var sharkMaxEats = 1
+    private var lastSharkFromRight: Boolean? = null
+    private val sharkMesh = FloatArray((SHARK_MESH_COLS + 1) * (SHARK_MESH_ROWS + 1) * 2)
     // UI is authored against the original 512x288 design and scaled with the
     // render buffer so labels stay readable at the higher scene resolution.
     private val uiScale = height / 288f
@@ -64,6 +80,11 @@ class AquariumScene(
 
     private var bubbleTimer = 0f
     private var feedFlash = 0f
+    private var themeHintAge = 0f
+    private var musicEnabled = true
+    private var musicFlash = 0f
+    private var sharkEnabled = true
+    private var sharkFlash = 0f
 
     private val backdrop = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     private val backdropCanvas = Canvas(backdrop)
@@ -77,6 +98,12 @@ class AquariumScene(
     private val bitmapPaint = Paint().apply {
         isFilterBitmap = true
         isAntiAlias = false
+    }
+    private val sharkShadowPaint = Paint().apply {
+        isFilterBitmap = true
+        isAntiAlias = false
+        colorFilter = PorterDuffColorFilter(0xCC071820.toInt(), PorterDuff.Mode.SRC_IN)
+        alpha = 60
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -98,6 +125,8 @@ class AquariumScene(
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val panelBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val iconStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
@@ -154,18 +183,28 @@ class AquariumScene(
     // ------------------------------------------------------------- lifecycle
 
     /** Rebuilds the hardscape and plant layers, leaving every fish in place. */
+    private fun currentKelpObstacles(): FloatArray =
+        if (theme == AquariumTheme.KELP_FOREST) {
+            floatArrayOf(width * 0.18f, width * 0.82f)
+        } else {
+            FloatArray(0)
+        }
+
     fun setTheme(value: AquariumTheme, announce: Boolean = true) {
         if (theme == value) return
         theme = value
         palette = paletteFor(value)
         buildBackdrop()
         redrawPlants()
+        val obstacles = currentKelpObstacles()
+        fish.forEach { it.obstacleXs = obstacles }
         if (announce) {
             // A theme change must name the theme that is on screen now, even when
             // several arrows are pressed quickly; do not queue old theme names.
             bannerQueue.clear()
             banner = null
-            bannerQueue.addLast(Banner(value.displayName, "LEFT / RIGHT OR T TO CHANGE THEME"))
+            themeHintAge = 6f
+            bannerQueue.addLast(Banner(value.displayName, "LEFT / RIGHT TO CHANGE"))
             nextBanner()
         }
     }
@@ -188,6 +227,7 @@ class AquariumScene(
             android.util.Log.w("AquariumScene", "Skipping unreadable fish ${meta.name}", error)
             return null
         }
+        newFish.obstacleXs = currentKelpObstacles()
         fish.add(newFish)
         if (announce) {
             spawnSparkles(newFish.x, newFish.y, 16)
@@ -202,6 +242,19 @@ class AquariumScene(
         }
         return newFish
     }
+
+    internal fun startSharkForTest() {
+        if (fish.isEmpty()) return
+        shark.spawn(fromRight = false, targetY = fish.first().y)
+        sharkMaxEats = 1
+        sharkTimer = 0f
+    }
+
+    internal fun placeSharkMouthForTest(mouthX: Float, mouthY: Float) {
+        shark.placeMouthAtForTest(mouthX, mouthY)
+    }
+
+    internal fun isSharkActiveForTest(): Boolean = shark.active
 
     fun removeFish(id: String) {
         removedFishIds.add(id)
@@ -239,20 +292,47 @@ class AquariumScene(
         serverRunning = running
     }
 
+    fun setMusicEnabled(enabled: Boolean, announce: Boolean = false) {
+        musicEnabled = enabled
+        if (announce) musicFlash = 1.5f
+    }
+
+    fun setSharkEnabled(enabled: Boolean, announce: Boolean = false) {
+        sharkEnabled = enabled
+        if (announce) sharkFlash = 1.5f
+        if (!enabled) shark.retreat()
+    }
+
+    val isSharkEnabled: Boolean get() = sharkEnabled
+
     fun update(dt: Float) {
         time += dt
         sceneAge += dt
         feedFlash = max(0f, feedFlash - dt)
+        themeHintAge = max(0f, themeHintAge - dt)
+        musicFlash = max(0f, musicFlash - dt)
+        sharkFlash = max(0f, sharkFlash - dt)
 
         // Pellets must sink before the fish target them. Without this update they
         // stayed at the surface forever, could not be reached, and eventually
         // filled the 18-pellet cap so feeding stopped permanently.
         for (item in food) item.update(dt)
 
+        updateSharkVisit(dt)
+
         for (f in fish) {
+            if (shark.canHunt()) {
+                f.threatX = shark.mouthX()
+                f.threatY = shark.mouthY()
+            } else {
+                f.threatX = Float.NaN
+                f.threatY = Float.NaN
+            }
             val target = nearestFood(f)
             f.update(dt, target, fishRand)
-            if (target != null && target.eaten) spawnBubbles(target.x, target.y, 4)
+            if (target != null && target.eaten) {
+                spawnBubbles(f.mouthX(), f.mouthY(), 4)
+            }
             if (f.activity > 1.35f && rand.nextFloat() < dt * 0.9f) {
                 val direction = if (f.facingRight) -1f else 1f
                 bubbles.add(
@@ -264,7 +344,8 @@ class AquariumScene(
                 )
             }
         }
-        food.removeAll { it.eaten || it.age > 40f || it.y > sandY + 4f }
+        resolveSharkBite()
+        food.removeAll { it.eaten || it.age > 60f || it.y > sandY + 4f }
 
         val iterator = bubbles.iterator()
         while (iterator.hasNext()) {
@@ -289,8 +370,14 @@ class AquariumScene(
         bubbleTimer -= dt
         if (bubbleTimer <= 0f) {
             bubbleTimer = 0.55f + rand.nextFloat() * 1.1f
-            val vent = if (rand.nextBoolean()) width * 0.18f else width * 0.74f
-            bubbles.add(Bubble(vent + (rand.nextFloat() - 0.5f) * 14f, sandY - 2f, rand))
+            val vent = nextBubbleVent()
+            bubbles.add(
+                Bubble(
+                    vent[0] + (rand.nextFloat() - 0.5f) * 14f,
+                    vent[1] + (rand.nextFloat() - 0.5f) * 4f,
+                    rand
+                )
+            )
         }
 
         if (banner == null && bannerQueue.isNotEmpty()) nextBanner()
@@ -304,24 +391,345 @@ class AquariumScene(
 
     }
 
+    /**
+     * Shark visits are deliberately rare and irregular. The first pass arrives
+     * after 55-85 s; later passes are 110-220 s apart. A pass ends only when the
+     * shark has swum off-screen, so a slow crossing is not cut short by the timer.
+     */
+    private fun updateSharkVisit(dt: Float) {
+        if (!sharkEnabled) {
+            if (shark.active) {
+                shark.retreat()
+                shark.update(dt, null)
+                if (!shark.active) sharkTimer = 30f + rand.nextFloat() * 30f
+            } else {
+                // Re-enabling starts a short, visible countdown instead of waiting
+                // for whatever remained of the old 2-4 minute interval.
+                sharkTimer = 30f + rand.nextFloat() * 30f
+            }
+            return
+        }
+        if (!shark.active) {
+            if (fish.size < 2) {
+                sharkTimer = max(sharkTimer, 20f)
+                return
+            }
+            sharkTimer -= dt
+            if (sharkTimer <= 0f) {
+                val target = fish[rand.nextInt(fish.size)]
+                // Alternate sides so every second pass comes from the other half of
+                // the tank, while the intervals themselves stay irregular.
+                val fromRight = lastSharkFromRight?.let { !it } ?: rand.nextBoolean()
+                lastSharkFromRight = fromRight
+                shark.spawn(fromRight, target.y)
+                sharkMaxEats = 1 + rand.nextInt(2)
+            }
+            return
+        }
+        val prey = if (fish.size > 1 && shark.canHunt() && shark.canEat(sharkMaxEats)) {
+            fish.minByOrNull { hypot(it.x - shark.mouthX(), it.y - shark.mouthY()) }
+        } else {
+            null
+        }
+        shark.update(dt, prey?.y)
+        if (shark.active && rand.nextFloat() < dt * (0.4f + shark.depth)) {
+            // A thin wake of bubbles peels off the tail as the shark drives forward.
+            bubbles.add(
+                Bubble(
+                    shark.tailX() + (rand.nextFloat() - 0.5f) * 12f,
+                    shark.tailY() + (rand.nextFloat() - 0.5f) * 9f,
+                    rand
+                )
+            )
+        }
+        if (!shark.active) {
+            sharkTimer = 110f + rand.nextFloat() * 110f
+        }
+    }
+
+    private fun resolveSharkBite() {
+        if (!shark.canHunt() || fish.size <= 1 || !shark.canEat(sharkMaxEats)) return
+        val mouthX = shark.mouthX()
+        val mouthY = shark.mouthY()
+        val reach = max(28f, shark.drawHeight * 0.42f)
+        val victim = fish.minByOrNull { hypot(it.x - mouthX, it.y - mouthY) } ?: return
+        if (hypot(victim.x - mouthX, victim.y - mouthY) > reach) return
+        shark.bite()
+        spawnBubbles(mouthX, mouthY, 10)
+        val meta = victim.meta
+        removeFish(meta.id)
+        onFishEaten?.invoke(meta)
+    }
+
+    private fun drawShark(canvas: Canvas) {
+        if (!shark.active) return
+        val bmp = sharkSprite
+        if (bmp.height <= 0 || bmp.width <= 0) return
+        val dw = shark.drawWidth
+        val dh = shark.drawHeight
+        val sharkAlpha = shark.alpha
+        canvas.save()
+        canvas.translate(shark.x, shark.visualY())
+        if (!shark.facingRight) canvas.scale(-1f, 1f)
+        // Bank with vertical tracking and roll a little with the tail beat.
+        canvas.rotate((shark.tilt + sin(shark.tailPhase) * 0.012f) * 57.2958f)
+        val amplitude = dw * 0.085f
+        val phaseShift = 2f * PI.toFloat() * 1.15f
+        var vertex = 0
+        for (row in 0..SHARK_MESH_ROWS) {
+            val v = row / SHARK_MESH_ROWS.toFloat()
+            for (col in 0..SHARK_MESH_COLS) {
+                val u = col / SHARK_MESH_COLS.toFloat()
+                // Tail on the left of the sprite, head on the right. The wave now
+                // travels through the whole rear body instead of hinging only the
+                // last third, which is what made the shark look paralysed.
+                var rear = ((0.82f - u) / 0.82f).coerceIn(0f, 1f)
+                rear = rear * rear * (3f - 2f * rear)
+                var tail = ((0.55f - u) / 0.55f).coerceIn(0f, 1f)
+                tail = tail * tail * (3f - 2f * tail)
+                val primary = sin(shark.tailPhase + u * phaseShift)
+                val secondary = sin(shark.tailPhase * 0.92f + u * phaseShift * 0.55f + 1.3f)
+                var dx = primary * (tail * amplitude + rear * amplitude * 0.26f) +
+                    secondary * tail * amplitude * 0.40f
+                // The snout counter-yaws slightly against the tail instead of
+                // travelling like a rigid spear.
+                val head = ((u - 0.78f) / 0.22f).coerceIn(0f, 1f)
+                dx += -sin(shark.tailPhase + 0.7f) * head * amplitude * 0.10f
+                // Pectoral fin flexes independently of the body.
+                val finU = when {
+                    u < 0.44f -> 0f
+                    u < 0.57f -> (u - 0.44f) / 0.13f
+                    u < 0.76f -> 1f
+                    u < 0.86f -> (0.86f - u) / 0.10f
+                    else -> 0f
+                }
+                val finV = ((v - 0.60f) / 0.40f).coerceIn(0f, 1f)
+                val finFlex = sin(shark.tailPhase * 1.35f + 0.6f) * dh * 0.065f * finU * finV
+                // The lower jaw opens and closes slightly as it swims.
+                val jawU = if (u > 0.80f) ((u - 0.80f) / 0.18f).coerceIn(0f, 1f) else 0f
+                val jawV = ((v - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                val jaw = sin(shark.tailPhase * 1.6f + 0.9f) * dh * 0.020f * jawU * jawV
+                sharkMesh[vertex++] = -dw / 2f + u * dw + dx
+                sharkMesh[vertex++] = -dh / 2f + v * dh + finFlex + jaw
+            }
+        }
+        // A soft offset silhouette gives the flat sprite some thickness against
+        // the water instead of pasting it onto the scene.
+        canvas.save()
+        val shadowDirection = if (shark.facingRight) 1f else -1f
+        canvas.translate(2f * shadowDirection, 2.5f)
+        sharkShadowPaint.alpha = (sharkAlpha * 0.28f).toInt()
+        canvas.drawBitmapMesh(
+            bmp,
+            SHARK_MESH_COLS,
+            SHARK_MESH_ROWS,
+            sharkMesh,
+            0,
+            null,
+            0,
+            sharkShadowPaint
+        )
+        canvas.restore()
+        bitmapPaint.alpha = sharkAlpha
+        canvas.drawBitmapMesh(bmp, SHARK_MESH_COLS, SHARK_MESH_ROWS, sharkMesh, 0, null, 0, bitmapPaint)
+        bitmapPaint.alpha = 255
+        canvas.restore()
+    }
+
+    /**
+     * Bubbles come from the hardscape that actually belongs to the scene:
+     * sponge tops or reef sand, rocky kelp vents, wreck portholes/hull leaks, or
+     * riverbed springs. This stops every theme sharing the same two vents.
+     */
+    private fun nextBubbleVent(): FloatArray = when (theme) {
+        AquariumTheme.REEF -> if (rand.nextBoolean()) {
+            floatArrayOf(width * 0.72f, sandY - 8f)
+        } else {
+            floatArrayOf(width * (0.28f + rand.nextFloat() * 0.18f), sandY - 2f)
+        }
+        AquariumTheme.KELP_FOREST -> if (rand.nextBoolean()) {
+            floatArrayOf(width * (0.22f + rand.nextFloat() * 0.16f), sandY - 2f)
+        } else {
+            floatArrayOf(width * (0.65f + rand.nextFloat() * 0.18f), sandY - 4f)
+        }
+        AquariumTheme.SUNKEN_WRECK -> when (rand.nextInt(3)) {
+            0 -> floatArrayOf(width * 0.66f, height * 0.64f)
+            1 -> floatArrayOf(width * 0.58f, height * 0.68f)
+            else -> floatArrayOf(width * 0.83f, height * 0.74f)
+        }
+        AquariumTheme.RIVERBED -> if (rand.nextBoolean()) {
+            floatArrayOf(width * (0.16f + rand.nextFloat() * 0.16f), sandY - 2f)
+        } else {
+            floatArrayOf(width * (0.62f + rand.nextFloat() * 0.18f), sandY - 5f)
+        }
+    }
+
     fun draw(canvas: Canvas) {
         canvas.drawBitmap(backdrop, 0f, 0f, null)
         canvas.drawBitmap(plantBehind, 0f, 0f, null)
         drawWaterLight(canvas)
+        drawAmbientLife(canvas)
         drawPlankton(canvas)
-        // Far fish first, near fish last, so depth reads as a real water column.
-        for (f in fish.sortedBy { it.depth }) drawFish(canvas, f)
+        // Far fish pass behind the foreground plants; near fish pass in front.
+        // This gives the water column real occlusion instead of a flat layer.
+        val sortedFish = fish.sortedBy { it.depth }
+        for (f in sortedFish) {
+            if (f.depth < FOREGROUND_PLANTS_DEPTH) drawFish(canvas, f)
+        }
+        // A shark emerging from the murk stays behind the foreground plants until
+        // it is close to the glass, then occludes them like a real large animal.
+        if (shark.active && shark.depth < FOREGROUND_PLANTS_DEPTH) drawShark(canvas)
         canvas.drawBitmap(plantFront, 0f, 0f, null)
+        for (f in sortedFish) {
+            if (f.depth >= FOREGROUND_PLANTS_DEPTH) drawFish(canvas, f)
+        }
+        if (shark.active && shark.depth >= FOREGROUND_PLANTS_DEPTH) drawShark(canvas)
         drawFishNames(canvas)
         drawFood(canvas)
         drawBubbles(canvas)
         drawSparkles(canvas)
         drawSurface(canvas)
         drawHints(canvas)
+        drawMusicIcon(canvas)
+        drawSharkIcon(canvas)
         drawBanner(canvas)
     }
 
     // --------------------------------------------------------------- fish art
+
+    /**
+     * Small ambient creatures are the animated punctuation in the painted
+     * backdrops: a pulsing jellyfish on the reef, a distant kelp school, a
+     * river turtle, and a moray eel by the wreck. Only a few shapes per frame.
+     */
+    private fun drawAmbientLife(canvas: Canvas) {
+        when (theme) {
+            AquariumTheme.REEF -> Unit
+            AquariumTheme.KELP_FOREST -> drawKelpSchool(canvas)
+            AquariumTheme.RIVERBED -> Unit
+            AquariumTheme.SUNKEN_WRECK -> Unit
+        }
+    }
+
+    private fun drawJellyfish(canvas: Canvas, cx: Float, cy: Float, size: Float) {
+        val pulse = 1f + 0.10f * sin(time * 1.35f)
+        fillPaint.shader = null
+        fillPaint.color = 0x4CD8B5F0
+        val bell = Path().apply {
+            moveTo(cx - size * pulse, cy)
+            cubicTo(
+                cx - size * 0.9f * pulse, cy - size * 1.15f,
+                cx + size * 0.9f * pulse, cy - size * 1.15f,
+                cx + size * pulse, cy
+            )
+            quadTo(cx, cy + size * 0.28f, cx - size * pulse, cy)
+            close()
+        }
+        canvas.drawPath(bell, fillPaint)
+        fillPaint.color = 0x35FFF0FF
+        canvas.drawOval(
+            cx - size * 0.62f * pulse, cy - size * 0.72f,
+            cx + size * 0.28f * pulse, cy - size * 0.18f,
+            fillPaint
+        )
+        strokePaint.color = 0x66D7B8F0
+        strokePaint.strokeWidth = 1.2f * uiScale
+        for (index in -2..2) {
+            val startX = cx + index * size * 0.28f
+            val endX = startX + sin(time * 0.9f + index * 1.2f) * size * 0.22f
+            val endY = cy + size * (0.9f + (index % 2) * 0.25f)
+            val path = Path().apply {
+                moveTo(startX, cy + size * 0.12f)
+                quadTo(startX + sin(time * 0.7f + index) * size * 0.3f, cy + size * 0.55f, endX, endY)
+            }
+            canvas.drawPath(path, strokePaint)
+        }
+    }
+
+    private fun drawKelpSchool(canvas: Canvas) {
+        fillPaint.shader = null
+        fillPaint.color = 0x88405F66.toInt()
+        for (index in 0 until 7) {
+            val x = ((time * 6.5f + index * 83f) % (width + 160f)) - 80f
+            val y = height * 0.20f + sin(time * 0.34f + index * 0.9f) * 12f + (index % 3) * 5f
+            canvas.drawOval(x - 4f, y - 1.5f, x + 4f, y + 1.5f, fillPaint)
+            val tail = Path().apply {
+                moveTo(x - 4f, y)
+                lineTo(x - 7f, y - 2.5f)
+                lineTo(x - 7f, y + 2.5f)
+                close()
+            }
+            canvas.drawPath(tail, fillPaint)
+        }
+    }
+
+    private fun drawAiTurtle(canvas: Canvas, turtle: Bitmap) {
+        val x = width * (0.30f + 0.16f * sin(time * 0.045f))
+        val y = height * (0.20f + 0.025f * sin(time * 0.07f + 2f))
+        val direction = if (cos(time * 0.045f) >= 0f) 1f else -1f
+        val heightPx = 38f * uiScale
+        val widthPx = heightPx * turtle.width / turtle.height.toFloat()
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(direction, 1f)
+        canvas.rotate(sin(time * 0.55f) * 3f)
+        canvas.drawBitmap(
+            turtle,
+            null,
+            android.graphics.RectF(-widthPx * 0.5f, -heightPx * 0.5f, widthPx * 0.5f, heightPx * 0.5f),
+            bitmapPaint
+        )
+        canvas.restore()
+    }
+
+    private fun drawTurtle(canvas: Canvas) {
+        val x = width * (0.30f + 0.16f * sin(time * 0.045f))
+        val y = height * (0.20f + 0.025f * sin(time * 0.07f + 2f))
+        val direction = if (cos(time * 0.045f) >= 0f) 1f else -1f
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(direction, 1f)
+        val shell = 22f * uiScale
+        noAaPaint.color = 0xFF4E6B4D.toInt()
+        canvas.drawOval(-shell, -shell * 0.52f, shell, shell * 0.52f, noAaPaint)
+        noAaPaint.color = 0xFF6E8A5C.toInt()
+        canvas.drawOval(-shell * 0.74f, -shell * 0.34f, shell * 0.74f, shell * 0.30f, noAaPaint)
+        noAaPaint.color = 0xFFB18A5A.toInt()
+        canvas.drawCircle(shell * 0.90f, 0f, shell * 0.22f, noAaPaint)
+        noAaPaint.color = Color.BLACK
+        canvas.drawCircle(shell * 0.97f, -shell * 0.05f, shell * 0.045f, noAaPaint)
+        val flap = sin(time * 1.1f) * shell * 0.18f
+        noAaPaint.color = 0xFF53704E.toInt()
+        canvas.drawOval(-shell * 0.55f, -shell * 0.78f + flap, shell * 0.05f, -shell * 0.45f + flap, noAaPaint)
+        canvas.drawOval(-shell * 0.55f, shell * 0.45f - flap, shell * 0.05f, shell * 0.78f - flap, noAaPaint)
+        canvas.restore()
+    }
+
+    private fun drawMorayEel(canvas: Canvas) {
+        val headX = width * (0.69f + 0.02f * sin(time * 0.35f))
+        val headY = height * (0.70f + 0.015f * sin(time * 0.5f + 1f))
+        strokePaint.color = 0xFF4E6B4D.toInt()
+        strokePaint.strokeWidth = 3.2f * uiScale
+        val body = Path().apply {
+            moveTo(headX - 8f * uiScale, headY + 2f * uiScale)
+            cubicTo(
+                headX - 26f * uiScale, headY - 8f * uiScale,
+                headX - 44f * uiScale, headY + 12f * uiScale,
+                headX - 65f * uiScale, headY + 2f * uiScale
+            )
+        }
+        canvas.drawPath(body, strokePaint)
+        noAaPaint.color = 0xFF5E7B55.toInt()
+        canvas.drawOval(
+            headX - 3f * uiScale, headY - 3f * uiScale,
+            headX + 9f * uiScale, headY + 3f * uiScale,
+            noAaPaint
+        )
+        noAaPaint.color = 0xFFF4E7B8.toInt()
+        canvas.drawCircle(headX + 5f * uiScale, headY - 1f * uiScale, 0.9f * uiScale, noAaPaint)
+        noAaPaint.color = Color.BLACK
+        canvas.drawCircle(headX + 5.3f * uiScale, headY - 1f * uiScale, 0.35f * uiScale, noAaPaint)
+    }
 
     private fun drawFish(canvas: Canvas, f: Fish) {
         val bmp = f.sprite
@@ -362,10 +770,11 @@ class AquariumScene(
         canvas.scale(turnScale, 1f)
         canvas.rotate(f.tilt * 57.2958f)
 
-        // Carangiform-style traveling wave: the head and front third stay rigid,
-        // while a smooth wave grows toward the tail. Displacing in Y (not X)
-        // makes the tail sweep through the water instead of stretching the body.
-        val amplitude = dh * 0.16f
+        // Carangiform-style traveling wave, but seen from the side the tail must
+        // sweep left/right across the screen. The head stays rigid; the rear body
+        // translates horizontally and the fin edges shear for a natural wag.
+        val amplitudeX = dw * 0.09f
+        val finShear = dw * 0.035f
         // Wavelength equals the 0.8-body stride in Fish, so the visible body wave
         // travels at the same speed as the fish. A longer wave made the tail look
         // fast while the fish was barely advancing.
@@ -380,12 +789,14 @@ class AquariumScene(
                 var tail = ((0.65f - u) / 0.65f).coerceIn(0f, 1f)
                 tail = tail * tail * (3f - 2f * tail)
                 val wave = sin(f.tailPhase + u * phaseShift + f.phase)
-                val dy = wave * amplitude * tail
-                fishMesh[vertex++] = -dw / 2f + u * dw
-                fishMesh[vertex++] = -dh / 2f + v * dh + dy
+                val dx = wave * tail * (amplitudeX + (v - 0.5f) * 2f * finShear)
+                fishMesh[vertex++] = -dw / 2f + u * dw + dx
+                fishMesh[vertex++] = -dh / 2f + v * dh
             }
         }
-        bitmapPaint.alpha = (150 + (f.depth * 105f)).toInt().coerceIn(150, 255)
+        // Fish are opaque. Depth is communicated by size, lift and foreground
+        // occlusion; alpha fading made the kelp visible through their bodies.
+        bitmapPaint.alpha = 255
         canvas.drawBitmapMesh(
             bmp,
             FISH_MESH_COLS,
@@ -443,6 +854,14 @@ class AquariumScene(
 
     private fun buildBackdrop() {
         val canvas = backdropCanvas
+        val painted = aiBackdrops[theme]
+        if (painted != null) {
+            canvas.drawBitmap(painted, null, android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat()), bitmapPaint)
+            // Keep the painted scene readable on a TV; the glass vignette also
+            // helps the LEGO fish stand out from the detailed background.
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), vignettePaint)
+            return
+        }
         fillPaint.shader = LinearGradient(
             0f, 0f, 0f, height.toFloat(),
             intArrayOf(palette.waterTop, palette.waterMid, palette.waterLow, palette.waterDeep),
@@ -557,12 +976,10 @@ class AquariumScene(
             }
             AquariumTheme.SUNKEN_WRECK -> {
                 drawShipwreck(canvas, width * 0.66f, sandY + 28f, 1.05f)
-                drawChest(canvas, width * 0.84f, sandY + 30f)
-                drawSeaFan(canvas, width * 0.22f, sandY + 24f, 46f, 200)
-                drawTubeSponges(canvas, width * 0.36f, sandY + 22f, 0.9f)
-                drawUrchin(canvas, width * 0.51f, sandY + 43f, 6.5f)
-                drawStarfish(canvas, width * 0.14f, sandY + 36f)
-                drawShell(canvas, width * 0.48f, sandY + 40f, 0xFFF6E3C2.toInt())
+                drawOpenChest(canvas, width * 0.14f, sandY + 28f, 0.95f)
+                drawBarrel(canvas, width * 0.82f, sandY + 26f, 0.9f)
+                drawCrate(canvas, width * 0.72f, sandY + 28f, 0.8f)
+                drawAnchor(canvas, width * 0.90f, sandY + 24f, 0.9f)
             }
             AquariumTheme.RIVERBED -> {
                 drawDriftwood(canvas, width * 0.30f, width * 0.76f, sandY + 30f, 1.5f)
@@ -734,6 +1151,143 @@ class AquariumScene(
         canvas.drawRect(cx - 14f, baseY - 15f, cx - 10f, baseY - 12f, noAaPaint)
     }
 
+    /**
+     * The wreck is a treasure scene, not a reef: an open chest, spilled coins,
+     * a crown, crates, a barrel and an anchor. Gold glints animate in the cached
+     * foreground layer, so the treasure catches the eye without per-frame cost.
+     */
+    private fun drawTreasureScene(canvas: Canvas) {
+        val baseY = height - 3f * uiScale
+        val treasure = aiTreasure
+        if (treasure != null) {
+            val heightPx = 86f * uiScale
+            val widthPx = heightPx * treasure.width / treasure.height.toFloat()
+            val left = width * 0.015f
+            val top = height - heightPx + 2f * uiScale
+            canvas.drawBitmap(
+                treasure,
+                null,
+                android.graphics.RectF(left, top, left + widthPx, top + heightPx),
+                bitmapPaint
+            )
+            drawGoldGlints(canvas, left + widthPx * 0.5f, top + heightPx * 0.35f)
+        } else {
+            drawOpenChest(canvas, width * 0.13f, baseY, 1.0f)
+            drawCoinPile(canvas, width * 0.13f, baseY - 1f * uiScale, 1.0f)
+            drawBarrel(canvas, width * 0.83f, baseY, 1.0f)
+            drawCrate(canvas, width * 0.72f, baseY, 0.85f)
+            drawAnchor(canvas, width * 0.93f, baseY - 2f * uiScale, 0.9f)
+            drawGoldGlints(canvas, width * 0.13f, baseY - 28f * uiScale)
+        }
+    }
+
+    private fun drawOpenChest(canvas: Canvas, cx: Float, baseY: Float, scale: Float) {
+        val s = uiScale * scale
+        fillPaint.shader = null
+        fillPaint.color = 0x24FFD166
+        canvas.drawCircle(cx, baseY - 16f * s, 34f * s, fillPaint)
+
+        noAaPaint.color = 0xFFFFD166.toInt()
+        canvas.drawOval(cx - 19f * s, baseY - 27f * s, cx + 19f * s, baseY - 15f * s, noAaPaint)
+        noAaPaint.color = 0xFF6B432A.toInt()
+        canvas.drawRect(cx - 21f * s, baseY - 17f * s, cx + 21f * s, baseY, noAaPaint)
+        noAaPaint.color = 0xFF8E5B38.toInt()
+        canvas.drawRect(cx - 21f * s, baseY - 17f * s, cx + 21f * s, baseY - 13f * s, noAaPaint)
+        noAaPaint.color = 0xFFFFD166.toInt()
+        canvas.drawRect(cx - 17f * s, baseY - 17f * s, cx - 14f * s, baseY, noAaPaint)
+        canvas.drawRect(cx + 14f * s, baseY - 17f * s, cx + 17f * s, baseY, noAaPaint)
+        canvas.drawRect(cx - 4f * s, baseY - 12f * s, cx + 4f * s, baseY - 5f * s, noAaPaint)
+
+        canvas.save()
+        canvas.translate(cx, baseY - 17f * s)
+        canvas.rotate(-25f)
+        noAaPaint.color = 0xFF7C4E30.toInt()
+        canvas.drawRect(-21f * s, -9f * s, 21f * s, 0f, noAaPaint)
+        noAaPaint.color = 0xFFFFD166.toInt()
+        canvas.drawRect(-21f * s, -9f * s, 21f * s, -6.5f * s, noAaPaint)
+        canvas.restore()
+
+        // A small crown resting against the chest.
+        noAaPaint.color = 0xFFFFD166.toInt()
+        val crown = Path().apply {
+            moveTo(cx + 24f * s, baseY)
+            lineTo(cx + 24f * s, baseY - 10f * s)
+            lineTo(cx + 28f * s, baseY - 5f * s)
+            lineTo(cx + 32f * s, baseY - 12f * s)
+            lineTo(cx + 36f * s, baseY - 5f * s)
+            lineTo(cx + 40f * s, baseY - 10f * s)
+            lineTo(cx + 40f * s, baseY)
+            close()
+        }
+        canvas.drawPath(crown, noAaPaint)
+    }
+
+    private fun drawCoinPile(canvas: Canvas, cx: Float, baseY: Float, scale: Float) {
+        val s = uiScale * scale
+        val offsets = floatArrayOf(-24f, -12f, 0f, 15f, 29f, 43f, -6f, 22f)
+        for (index in offsets.indices) {
+            val x = cx + offsets[index] * s
+            val y = baseY - (index % 3) * 2.2f * s
+            noAaPaint.color = if (index % 2 == 0) 0xFFFFD166.toInt() else 0xFFE7B74A.toInt()
+            canvas.drawOval(x - 4f * s, y - 2.2f * s, x + 4f * s, y + 2.2f * s, noAaPaint)
+            noAaPaint.color = 0x88FFF3B0.toInt()
+            canvas.drawRect(x - 1.5f * s, y - 1.5f * s, x + 0.8f * s, y - 0.4f * s, noAaPaint)
+        }
+    }
+
+    private fun drawBarrel(canvas: Canvas, cx: Float, baseY: Float, scale: Float) {
+        val s = uiScale * scale
+        noAaPaint.color = 0xFF6B4A2F.toInt()
+        canvas.drawRoundRect(cx - 9f * s, baseY - 30f * s, cx + 9f * s, baseY, 5f * s, 5f * s, noAaPaint)
+        noAaPaint.color = 0xFF8E623D.toInt()
+        canvas.drawRect(cx - 8f * s, baseY - 27f * s, cx + 8f * s, baseY - 3f * s, noAaPaint)
+        noAaPaint.color = 0xFF3A2A20.toInt()
+        canvas.drawRect(cx - 10f * s, baseY - 24f * s, cx + 10f * s, baseY - 21f * s, noAaPaint)
+        canvas.drawRect(cx - 10f * s, baseY - 9f * s, cx + 10f * s, baseY - 6f * s, noAaPaint)
+        noAaPaint.color = 0xFFB58A55.toInt()
+        canvas.drawOval(cx - 9f * s, baseY - 33f * s, cx + 9f * s, baseY - 27f * s, noAaPaint)
+    }
+
+    private fun drawCrate(canvas: Canvas, cx: Float, baseY: Float, scale: Float) {
+        val s = uiScale * scale
+        noAaPaint.color = 0xFF6A4A2F.toInt()
+        canvas.drawRect(cx - 15f * s, baseY - 22f * s, cx + 15f * s, baseY, noAaPaint)
+        noAaPaint.color = 0xFF8E623D.toInt()
+        canvas.drawRect(cx - 13f * s, baseY - 19f * s, cx + 13f * s, baseY - 3f * s, noAaPaint)
+        noAaPaint.color = 0xFF4A3324.toInt()
+        canvas.drawRect(cx - 15f * s, baseY - 22f * s, cx + 15f * s, baseY - 19f * s, noAaPaint)
+        canvas.drawRect(cx - 1.5f * s, baseY - 22f * s, cx + 1.5f * s, baseY, noAaPaint)
+        canvas.drawRect(cx - 15f * s, baseY - 11f * s, cx + 15f * s, baseY - 8f * s, noAaPaint)
+    }
+
+    private fun drawAnchor(canvas: Canvas, cx: Float, baseY: Float, scale: Float) {
+        val s = uiScale * scale
+        plantStroke.color = 0xFF5B5A52.toInt()
+        plantStroke.strokeWidth = 3f * s
+        canvas.drawLine(cx, baseY - 28f * s, cx, baseY - 4f * s, plantStroke)
+        canvas.drawCircle(cx, baseY - 33f * s, 5f * s, plantStroke)
+        val flukes = Path().apply {
+            moveTo(cx - 14f * s, baseY - 12f * s)
+            quadTo(cx, baseY - 2f * s, cx + 14f * s, baseY - 12f * s)
+        }
+        canvas.drawPath(flukes, plantStroke)
+        plantStroke.strokeWidth = 2f * s
+        canvas.drawLine(cx - 9f * s, baseY - 23f * s, cx + 9f * s, baseY - 23f * s, plantStroke)
+    }
+
+    private fun drawGoldGlints(canvas: Canvas, cx: Float, cy: Float) {
+        for (index in 0 until 6) {
+            val phase = time * 1.2f + index * 1.7f
+            val alpha = (0.25f + 0.75f * (0.5f + 0.5f * sin(phase))) * 190f
+            if (alpha < 70f) continue
+            val x = cx + sin(index * 2.4f) * 24f * uiScale
+            val y = cy - 8f * uiScale + cos(index * 1.9f) * 12f * uiScale
+            fillPaint.shader = null
+            fillPaint.color = Color.argb(alpha.toInt(), 255, 232, 131)
+            canvas.drawCircle(x, y, (1.2f + index % 2 * 0.6f) * uiScale, fillPaint)
+        }
+    }
+
     private fun drawStarfish(canvas: Canvas, cx: Float, cy: Float) {
         val path = Path()
         for (i in 0 until 10) {
@@ -761,9 +1315,14 @@ class AquariumScene(
 
     private fun redrawPlants() {
         plantBehindCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-        drawPlantsBehind(plantBehindCanvas)
         plantFrontCanvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-        drawPlantsFront(plantFrontCanvas)
+        if (aiBackdrops[theme] != null) {
+            drawAiPlantsBehind(plantBehindCanvas)
+            drawAiPlantsFront(plantFrontCanvas)
+        } else {
+            drawPlantsBehind(plantBehindCanvas)
+            drawPlantsFront(plantFrontCanvas)
+        }
     }
 
     private fun drawPlantsBehind(canvas: Canvas) {
@@ -864,6 +1423,297 @@ class AquariumScene(
                 drawSeaGrassClump(canvas, width * 0.66f, height - 5f, 34f, 2.9f, 235)
             }
         }
+        drawSurfaceDecor(canvas)
+    }
+
+    private fun drawAiPlantsBehind(canvas: Canvas) {
+        when (theme) {
+            AquariumTheme.KELP_FOREST -> {
+                kelpBehind(canvas, 0.05f, 160f, 0.8f, 1.05f, 235)
+                kelpBehind(canvas, 0.15f, 130f, 1.7f, 0.9f, 220)
+                kelpBehind(canvas, 0.29f, 108f, 2.5f, 0.78f, 205)
+                kelpBehind(canvas, 0.43f, 142f, 3.3f, 0.95f, 225)
+                kelpBehind(canvas, 0.58f, 118f, 4.0f, 0.82f, 210)
+                kelpBehind(canvas, 0.73f, 154f, 4.8f, 1.0f, 230)
+                kelpBehind(canvas, 0.86f, 128f, 5.4f, 0.88f, 215)
+                kelpBehind(canvas, 0.96f, 180f, 6.0f, 1.12f, 240)
+                grassRow(canvas, 0.10f, 28f, 1.4f, 180)
+                grassRow(canvas, 0.52f, 24f, 2.4f, 175)
+                grassRow(canvas, 0.78f, 26f, 4.1f, 180)
+            }
+            AquariumTheme.RIVERBED -> {
+                grassRow(canvas, 0.08f, 30f, 1.1f, 190)
+                grassRow(canvas, 0.34f, 26f, 2.4f, 180)
+                grassRow(canvas, 0.72f, 30f, 4.1f, 185)
+                drawFern(canvas, width * 0.82f, sandY + 16f, 72f, 2.8f, 170)
+            }
+            AquariumTheme.SUNKEN_WRECK -> Unit
+            AquariumTheme.REEF -> Unit
+        }
+    }
+
+    private fun drawAiPlantsFront(canvas: Canvas) {
+        when (theme) {
+            AquariumTheme.REEF -> {
+                drawSeaFan(canvas, width * 0.11f, sandY + 14f, 62f, 235)
+                drawSeaFan(canvas, width * 0.88f, sandY + 18f, 54f, 225)
+                drawAnemone(canvas, width * 0.43f, sandY + 18f, 1.0f, 0.4f, 235)
+                drawSeaGrassClump(canvas, width * 0.55f, height - 4f, 30f, 1.1f, 225)
+                drawTubeSponges(canvas, width * 0.72f, sandY + 22f, 0.9f)
+            }
+            AquariumTheme.KELP_FOREST -> {
+                kelpFront(canvas, 0.0f, 190f, 2.1f, 1.3f, 250)
+                kelpFront(canvas, 0.10f, 148f, 3.1f, 1.05f, 240)
+                kelpFront(canvas, 0.28f, 122f, 1.2f, 0.82f, 225)
+                // Tall fronds frame the sides, not the middle of the screen.
+                // Fish still pass behind them near the edges.
+                kelpFront(canvas, 0.18f, 300f, 4.6f, 1.35f, 235)
+                kelpFront(canvas, 0.82f, 276f, 1.8f, 1.25f, 230)
+                kelpFront(canvas, 0.72f, 118f, 2.4f, 0.78f, 225)
+                kelpFront(canvas, 0.88f, 154f, 4.2f, 1.1f, 242)
+                kelpFront(canvas, 0.995f, 165f, 4.7f, 1.15f, 250)
+                drawSeaGrassClump(canvas, width * 0.37f, height - 6f, 36f, 0.8f, 230)
+                drawSeaGrassClump(canvas, width * 0.62f, height - 4f, 32f, 2.1f, 225)
+            }
+            AquariumTheme.SUNKEN_WRECK -> {
+                drawTreasureScene(canvas)
+            }
+            AquariumTheme.RIVERBED -> {
+                val reeds = aiReeds
+                if (reeds != null) {
+                    drawAiReeds(canvas, reeds)
+                } else {
+                    drawDriftwood(canvas, width * 0.04f, width * 0.27f, height * 0.95f, 1.0f)
+                    drawRock(canvas, width * 0.99f, height + 8f, 66f, 38f)
+                    drawSeaGrassClump(canvas, width * 0.20f, height - 5f, 44f, 0.6f, 232)
+                    drawSeaGrassClump(canvas, width * 0.36f, height - 4f, 36f, 1.6f, 228)
+                    drawSeaGrassClump(canvas, width * 0.60f, height - 5f, 40f, 2.7f, 230)
+                    drawSeaGrassClump(canvas, width * 0.82f, height - 4f, 32f, 3.8f, 225)
+                    drawRiverStones(canvas)
+                }
+            }
+        }
+        drawSurfaceDecor(canvas)
+    }
+
+    /**
+     * Surface decor differs by biotope: kelp canopy, river lily pads and drifting
+     * leaves, or floating wreck debris. It lives in the 15 fps cached plant
+     * overlay, so a few shapes animate without touching the CPU budget.
+     */
+    private fun drawSurfaceDecor(canvas: Canvas) {
+        when (theme) {
+            AquariumTheme.KELP_FOREST -> drawKelpCanopy(canvas)
+            AquariumTheme.RIVERBED -> Unit
+            AquariumTheme.SUNKEN_WRECK -> drawWreckSurface(canvas)
+            AquariumTheme.REEF -> Unit
+        }
+    }
+
+    private fun drawKelpCanopy(canvas: Canvas) {
+        for (index in 0 until 6) {
+            val x = width * (0.06f + index * 0.19f) + sin(time * 0.34f + index * 1.7f) * 2.2f * uiScale
+            val y = (4f + sin(time * 0.48f + index * 1.1f) * 1.1f) * uiScale
+            val length = (12f + (index % 3) * 4f) * uiScale
+            val droop = (3.5f + (index % 2) * 2f) * uiScale
+            plantFill.color = if (index % 2 == 0) palette.kelpFrontMid else palette.kelpFrontLight
+            plantFill.alpha = 220
+            val blade = Path().apply {
+                moveTo(x - length, y)
+                quadTo(x - length * 0.35f, y - droop * 2.4f, x + length * 0.15f, y - droop)
+                quadTo(x + length * 0.72f, y - droop * 0.15f, x + length, y + droop * 0.65f)
+                lineTo(x + length * 0.62f, y + droop * 1.5f)
+                quadTo(x, y + droop * 0.55f, x - length, y + droop * 0.8f)
+                close()
+            }
+            canvas.drawPath(blade, plantFill)
+            plantFill.alpha = 255
+            plantFill.color = palette.kelpFrontDark
+            canvas.drawCircle(x + length * 0.3f, y - droop * 0.7f, 1.7f * uiScale, plantFill)
+            plantStroke.color = palette.kelpFrontDark
+            plantStroke.strokeWidth = 1.1f * uiScale
+            canvas.drawLine(x, y + droop * 0.5f, x, y + (9f + index % 3 * 3f) * uiScale, plantStroke)
+        }
+    }
+
+    private fun drawAiReeds(canvas: Canvas, reeds: Bitmap) {
+        val fractions = floatArrayOf(0.16f, 0.37f, 0.79f)
+        for (index in fractions.indices) {
+            val heightPx = (96f + index % 2 * 16f) * uiScale
+            val widthPx = heightPx * reeds.width / reeds.height.toFloat()
+            val baseX = width * fractions[index]
+            val baseY = height + 2f * uiScale
+            canvas.save()
+            canvas.translate(baseX, baseY)
+            canvas.rotate(sin(time * 0.55f + index * 1.6f) * 2.2f)
+            canvas.drawBitmap(
+                reeds,
+                null,
+                android.graphics.RectF(-widthPx * 0.5f, -heightPx, widthPx * 0.5f, 0f),
+                bitmapPaint
+            )
+            canvas.restore()
+        }
+    }
+
+    private fun drawAiLeafLitter(canvas: Canvas, leaf: Bitmap) {
+        val fractions = floatArrayOf(0.06f, 0.12f, 0.29f, 0.47f, 0.63f, 0.74f, 0.88f, 0.95f)
+        for (index in fractions.indices) {
+            val size = (9f + index % 3 * 2.5f) * uiScale
+            val x = width * fractions[index]
+            val y = height - (2f + index % 2 * 2f) * uiScale
+            canvas.save()
+            canvas.translate(x, y)
+            canvas.rotate(index * 43f + sin(time * 0.3f + index) * 4f)
+            canvas.drawBitmap(
+                leaf,
+                null,
+                android.graphics.RectF(-size * 0.5f, -size * 0.5f, size * 0.5f, size * 0.5f),
+                bitmapPaint
+            )
+            canvas.restore()
+        }
+    }
+
+    private fun drawRiverSurface(canvas: Canvas) {
+        val leaf = aiLeaf
+        if (leaf != null) {
+            drawAiFallingLeaves(canvas, leaf)
+            return
+        }
+        val padColours = intArrayOf(0xFF5C8F54.toInt(), 0xFF74A968.toInt(), 0xFF4C7E47.toInt())
+        val padXs = floatArrayOf(0.07f, 0.22f, 0.39f, 0.56f, 0.73f, 0.90f)
+        for (index in padXs.indices) {
+            val x = width * padXs[index] + sin(time * 0.33f + index * 1.5f) * 2.4f * uiScale
+            val y = (4.5f + sin(time * 0.5f + index * 1.2f) * 1.2f) * uiScale
+            val radiusX = (7f + (index % 3) * 2f) * uiScale
+            val radiusY = (2.8f + (index % 2) * 0.9f) * uiScale
+            plantFill.color = padColours[index % padColours.size]
+            plantFill.alpha = 235
+            canvas.drawOval(x - radiusX, y - radiusY, x + radiusX, y + radiusY, plantFill)
+            plantStroke.color = 0xFF355F39.toInt()
+            plantStroke.strokeWidth = 1f * uiScale
+            canvas.drawLine(x, y, x + radiusX * 0.8f, y - radiusY * 0.1f, plantStroke)
+            if (index == 2) {
+                plantFill.color = 0xFFF4B6C8.toInt()
+                canvas.drawCircle(x - radiusX * 0.25f, y - radiusY * 0.5f, 2f * uiScale, plantFill)
+                canvas.drawCircle(x, y - radiusY * 0.8f, 1.7f * uiScale, plantFill)
+                canvas.drawCircle(x + radiusX * 0.25f, y - radiusY * 0.5f, 2f * uiScale, plantFill)
+            }
+        }
+        plantFill.alpha = 255
+        // A few brown leaves drift down through the water column and reset
+        // off-screen, giving the river scene constant gentle motion.
+        for (index in 0 until 3) {
+            val cycle = sandY * 0.72f
+            val fallY = ((time * (8f + index * 2f) + index * 97f) % cycle) + 16f * uiScale
+            val x = width * (0.18f + index * 0.31f) + sin(time * 0.5f + index * 2f) * 9f * uiScale
+            val radius = (2.7f + index * 0.5f) * uiScale
+            canvas.save()
+            canvas.rotate(time * 34f + index * 70f, x, fallY)
+            plantFill.color = when (index) {
+                0 -> 0xFFC88A45.toInt()
+                1 -> 0xFF9A5F32.toInt()
+                else -> 0xFFE0A84D.toInt()
+            }
+            canvas.drawOval(x - radius * 1.7f, fallY - radius, x + radius * 1.7f, fallY + radius, plantFill)
+            canvas.restore()
+        }
+        plantFill.color = 0xFF74A968.toInt()
+        plantFill.alpha = 170
+        val specks = floatArrayOf(0.15f, 0.31f, 0.48f, 0.64f, 0.81f, 0.95f)
+        for (index in specks.indices) {
+            val x = width * specks[index] + sin(time * 0.44f + index) * 1.5f * uiScale
+            val y = (5f + (index % 2) * 2.4f) * uiScale
+            canvas.drawOval(
+                x - 2f * uiScale, y - 1f * uiScale,
+                x + 2f * uiScale, y + 1f * uiScale,
+                plantFill
+            )
+        }
+        plantFill.alpha = 255
+    }
+
+    private fun drawAiFallingLeaves(canvas: Canvas, leaf: Bitmap) {
+        // A few AI-painted leaves tumble slowly through the water. They are
+        // deliberately sparse; a row of floating leaves looked like fruit.
+        for (index in 0 until 3) {
+            val cycle = sandY * 0.72f
+            val fallY = ((time * (7f + index * 1.8f) + index * 97f) % cycle) + 18f * uiScale
+            val x = width * (0.22f + index * 0.28f) + sin(time * 0.5f + index * 2f) * 9f * uiScale
+            val size = (10f + index * 1.6f) * uiScale
+            canvas.save()
+            canvas.translate(x, fallY)
+            canvas.rotate(time * 26f + index * 70f)
+            canvas.drawBitmap(
+                leaf,
+                null,
+                android.graphics.RectF(-size * 0.5f, -size * 0.5f, size * 0.5f, size * 0.5f),
+                bitmapPaint
+            )
+            canvas.restore()
+        }
+    }
+
+    private fun drawWreckSurface(canvas: Canvas) {
+        // Broken planks and a torn rope float near the surface above the wreck.
+        for (index in 0 until 2) {
+            val x = width * (0.14f + index * 0.58f) + sin(time * 0.32f + index * 1.8f) * 3f * uiScale
+            val y = (5f + sin(time * 0.46f + index) * 1.2f) * uiScale
+            canvas.save()
+            canvas.rotate(-7f + sin(time * 0.5f + index) * 4f, x, y)
+            noAaPaint.color = if (index == 0) 0xFF6B4A2F.toInt() else 0xFF4F3827.toInt()
+            canvas.drawRect(x - 13f * uiScale, y - 1.5f * uiScale, x + 13f * uiScale, y + 1.5f * uiScale, noAaPaint)
+            noAaPaint.color = 0xFF9A7048.toInt()
+            canvas.drawRect(x - 9f * uiScale, y - 1.5f * uiScale, x - 4f * uiScale, y - 0.5f * uiScale, noAaPaint)
+            canvas.restore()
+        }
+        plantStroke.color = 0xAA8C6D45.toInt()
+        plantStroke.strokeWidth = 1.2f * uiScale
+        val ropeX = width * 0.66f + sin(time * 0.3f) * 3f * uiScale
+        val ropeY = 5f * uiScale
+        canvas.drawLine(ropeX, ropeY, ropeX + 8f * uiScale, ropeY + 9f * uiScale, plantStroke)
+        canvas.drawLine(ropeX + 8f * uiScale, ropeY + 9f * uiScale, ropeX + 2f * uiScale, ropeY + 15f * uiScale, plantStroke)
+        plantFill.color = 0x88AFC8C7.toInt()
+        for (index in 0 until 3) {
+            val bubbleY = ((time * (5f + index) + index * 13f) % (height * 0.5f)) + 8f * uiScale
+            val bubbleX = width * (0.58f + index * 0.035f) + sin(time * 0.5f + index) * 2f * uiScale
+            canvas.drawCircle(bubbleX, bubbleY, (1.3f + index * 0.3f) * uiScale, plantFill)
+        }
+    }
+
+    private fun drawLeafLitter(canvas: Canvas) {
+        val leaves = floatArrayOf(0.06f, 0.15f, 0.33f, 0.49f, 0.64f, 0.77f, 0.88f, 0.96f)
+        for (index in leaves.indices) {
+            val x = width * leaves[index]
+            val y = height - (3f + (index % 3) * 2f) * uiScale
+            val radius = (1.8f + (index % 3) * 0.7f) * uiScale
+            canvas.save()
+            canvas.rotate(index * 47f, x, y)
+            plantFill.color = when (index % 3) {
+                0 -> 0xFFB9783F.toInt()
+                1 -> 0xFF8E5938.toInt()
+                else -> 0xFFD49A4B.toInt()
+            }
+            plantFill.alpha = 220
+            canvas.drawOval(x - radius * 1.8f, y - radius, x + radius * 1.8f, y + radius, plantFill)
+            canvas.restore()
+        }
+        plantFill.alpha = 255
+    }
+
+    private fun drawRiverStones(canvas: Canvas) {
+        val stones = floatArrayOf(0.10f, 0.24f, 0.43f, 0.61f, 0.78f, 0.91f)
+        for (index in stones.indices) {
+            val x = width * stones[index]
+            val y = height - (6f + (index % 3) * 3f) * uiScale
+            val radiusX = (5f + (index % 3) * 2.5f) * uiScale
+            val radiusY = (2.5f + (index % 2)) * uiScale
+            noAaPaint.color = if (index % 2 == 0) 0xFF8F8A78.toInt() else 0xFF6F6C5C.toInt()
+            canvas.drawOval(x - radiusX, y - radiusY, x + radiusX, y + radiusY, noAaPaint)
+            noAaPaint.color = 0x55E8DFC4.toInt()
+            canvas.drawRect(x - radiusX * 0.55f, y - radiusY * 0.65f, x + radiusX * 0.2f, y - radiusY * 0.35f, noAaPaint)
+        }
     }
 
     private fun kelpBehind(
@@ -922,7 +1772,7 @@ class AquariumScene(
             floatArrayOf(0.15f, 0.86f, 0.76f),
             floatArrayOf(0.26f, 0.70f, 0.58f)
         )
-        val widthPx = heightPx * 0.085f * scale
+        val widthPx = heightPx * 0.11f * scale
         for (index in specs.indices) {
             val spec = specs[index]
             val color = when (index % 3) {
@@ -988,6 +1838,32 @@ class AquariumScene(
         for (i in 1 until steps) kelpVeinPath.lineTo(kelpCentresX[i], kelpCentresY[i])
         canvas.drawPath(kelpVeinPath, plantStroke)
         plantStroke.alpha = 255
+
+        // Giant kelp is recognisable by the rows of leaf-like blades along the
+        // stipe, not just a tapered green ribbon. These alternating fronds are
+        // still cheap: a handful of quadratic paths per stalk.
+        val fronds = 7
+        plantFill.alpha = (alpha * 0.92f).toInt()
+        for (index in 1..fronds) {
+            val t = index / (fronds + 1f)
+            val vertex = (t * steps).toInt().coerceIn(0, steps)
+            val cx = kelpCentresX[vertex]
+            val cy = kelpCentresY[vertex]
+            val side = if (index % 2 == 0) -1f else 1f
+            val length = widthPx * (1.15f - t * 0.35f)
+            val heightLeaf = length * 0.42f
+            plantFill.color = if (index % 2 == 0) color else veinColor
+            val frond = Path().apply {
+                moveTo(cx, cy)
+                quadTo(cx + side * length * 0.5f, cy - heightLeaf, cx + side * length, cy - heightLeaf * 0.15f)
+                quadTo(cx + side * length * 0.52f, cy + heightLeaf * 0.42f, cx, cy)
+                close()
+            }
+            canvas.drawPath(frond, plantFill)
+            plantFill.color = veinColor
+            canvas.drawCircle(cx + side * length * 0.78f, cy - heightLeaf * 0.12f, 1.1f, plantFill)
+        }
+        plantFill.alpha = 255
     }
 
     private fun drawBush(
@@ -1278,10 +2154,11 @@ class AquariumScene(
         val branches = 9
         val originY = baseY - size * 0.22f
         val angles = FloatArray(branches)
+        val sway = sin(time * 0.65f + baseX * 0.018f) * 0.045f
         plantStroke.strokeWidth = 1.9f
         plantStroke.alpha = alpha
         for (index in 0 until branches) {
-            val spread = (index - (branches - 1) / 2f) * 0.16f + sin(index * 1.3f) * 0.02f
+            val spread = (index - (branches - 1) / 2f) * 0.16f + sin(index * 1.3f) * 0.02f + sway
             val angle = -PI.toFloat() / 2f + spread
             angles[index] = angle
             val controlX = baseX + cos(angle) * size * 0.42f
@@ -1611,6 +2488,11 @@ class AquariumScene(
     private companion object {
         const val FISH_MESH_COLS = 16
         const val FISH_MESH_ROWS = 2
+        const val SHARK_MESH_COLS = 24
+        const val SHARK_MESH_ROWS = 6
+        // Foreground kelp sits near the front glass. Only fish very close to the
+        // glass pass in front of it; the rest disappear behind the fronds.
+        const val FOREGROUND_PLANTS_DEPTH = 0.78f
     }
 
     // ------------------------------------------------------------------ text
@@ -1631,64 +2513,112 @@ class AquariumScene(
             )
         }
 
-        labelPaint.textSize = 7.5f * uiScale
-        labelPaint.color = 0x88FFF4D6.toInt()
-        labelPaint.textAlign = Paint.Align.LEFT
-        val countText = if (fish.size == 1) "1 FISH" else "${fish.size} FISH"
-        canvas.drawText(countText, 11f * uiScale, height - 7f * uiScale, labelPaint)
-
-        if (serverRunning && serverIp != "0.0.0.0") {
-            labelPaint.textAlign = Paint.Align.RIGHT
-            labelPaint.color = 0x66FFF4D6.toInt()
-            canvas.drawText(
-                "$serverIp:$serverPort",
-                width - 11f * uiScale,
-                height - 7f * uiScale,
-                labelPaint
-            )
-        }
-
-        if (sceneAge < 16f && fish.isNotEmpty()) {
-            val alpha = (((16f - sceneAge) / 4f).coerceAtMost(1f) * 0.62f * 255).toInt()
+        // Keep the tank readable. Only show a brief feeding hint and the LAN
+        // address on startup; after that the screen belongs to the fish.
+        if (sceneAge < 10f && fish.isNotEmpty()) {
+            val alpha = (((10f - sceneAge) / 3f).coerceAtMost(1f) * 0.55f * 255).toInt()
+            labelPaint.textSize = 7.5f * uiScale
             labelPaint.textAlign = Paint.Align.CENTER
             labelPaint.color = Color.argb(alpha, 255, 244, 214)
             canvas.drawText(
-                "OK: FEED     LEFT / RIGHT: LANDSCAPE",
+                "OK: FEED   UP/DOWN: SOUND   HOLD OK: SHARK",
                 width / 2f,
                 height - 7f * uiScale,
                 labelPaint
             )
+            if (serverRunning && serverIp != "0.0.0.0") {
+                labelPaint.textAlign = Paint.Align.RIGHT
+                labelPaint.color = Color.argb(alpha / 2, 255, 244, 214)
+                canvas.drawText(
+                    "$serverIp:$serverPort",
+                    width - 11f * uiScale,
+                    height - 7f * uiScale,
+                    labelPaint
+                )
+            }
         }
-        if (feedFlash > 0f) {
-            val alpha = (feedFlash / 1.4f * 180).toInt()
-            labelPaint.textAlign = Paint.Align.CENTER
-            labelPaint.color = Color.argb(alpha, 255, 209, 102)
-            labelPaint.textSize = 10f * uiScale
-            canvas.drawText("YUM!", width / 2f, height * 0.2f, labelPaint)
-        }
-        labelPaint.textSize = 8.5f * uiScale
+
+        // A small persistent landscape chip, not a billboard. The full theme
+        // name still appears in the transient banner when it changes.
+        labelPaint.textSize = 7f * uiScale
         labelPaint.textAlign = Paint.Align.LEFT
-        labelPaint.color = 0xCCFFF4D6.toInt()
-        val themeLabel = "LANDSCAPE: ${currentTheme.displayName}"
-        val changeHint = "   PRESS LEFT / RIGHT"
-        val themeWidth = labelPaint.measureText(themeLabel + changeHint)
-        val panelLeft = 8f * uiScale
+        labelPaint.color = if (themeHintAge > 0f) 0xCCFFF4D6.toInt() else 0x77FFF4D6.toInt()
+        val themeLabel = "< ${currentTheme.displayName} >"
+        val themeWidth = labelPaint.measureText(themeLabel)
+        val panelLeft = 7f * uiScale
         val panelTop = 4f * uiScale
-        panelPaint.color = 0x99081A22.toInt()
+        panelPaint.color = if (themeHintAge > 0f) 0x66081A22.toInt() else 0x33081A22.toInt()
         canvas.drawRoundRect(
             panelLeft,
             panelTop,
-            panelLeft + themeWidth + 16f * uiScale,
-            panelTop + 20f * uiScale,
+            panelLeft + themeWidth + 9f * uiScale,
+            panelTop + 16f * uiScale,
             4f * uiScale,
             4f * uiScale,
             panelPaint
         )
-        val textX = 12f * uiScale
-        val textY = 17f * uiScale
-        canvas.drawText(themeLabel, textX, textY, labelPaint)
-        labelPaint.color = 0xFFFFD166.toInt()
-        canvas.drawText(changeHint, textX + labelPaint.measureText(themeLabel), textY, labelPaint)
+        canvas.drawText(themeLabel, 10.5f * uiScale, 15f * uiScale, labelPaint)
+    }
+
+    private fun drawMusicIcon(canvas: Canvas) {
+        val alpha = if (musicFlash > 0f) 210 else 90
+        iconPaint.color = Color.argb(alpha, 255, 244, 214)
+        val scale = uiScale
+        val baseX = width - 27f * scale
+        val baseY = 17f * scale
+        val barWidth = 2.2f * scale
+        val gap = 2.2f * scale
+        for (index in 0 until 3) {
+            val barHeight = (4f + index * 2.2f) * scale
+            canvas.drawRect(
+                baseX + index * (barWidth + gap),
+                baseY - barHeight,
+                baseX + index * (barWidth + gap) + barWidth,
+                baseY,
+                iconPaint
+            )
+        }
+        if (!musicEnabled) {
+            iconStroke.color = Color.argb(alpha, 255, 209, 102)
+            iconStroke.strokeWidth = 1.4f * scale
+            canvas.drawLine(
+                baseX - 2.5f * scale, baseY + 1f * scale,
+                baseX + 11f * scale, baseY - 10f * scale,
+                iconStroke
+            )
+        }
+    }
+
+    private fun drawSharkIcon(canvas: Canvas) {
+        val alpha = if (sharkFlash > 0f) 210 else 90
+        iconPaint.color = Color.argb(alpha, 255, 244, 214)
+        val s = uiScale
+        val left = width - 52f * s
+        val top = 9f * s
+        val w = 16f * s
+        val h = 8f * s
+        val silhouette = Path().apply {
+            moveTo(left + w, top + h * 0.55f)
+            quadTo(left + w * 0.70f, top, left + w * 0.36f, top + h * 0.12f)
+            lineTo(left + w * 0.30f, top - h * 0.28f)
+            lineTo(left + w * 0.22f, top + h * 0.18f)
+            lineTo(left + w * 0.06f, top + h * 0.06f)
+            lineTo(left + w * 0.10f, top + h * 0.52f)
+            lineTo(left + w * 0.02f, top + h * 0.95f)
+            lineTo(left + w * 0.24f, top + h * 0.76f)
+            quadTo(left + w * 0.65f, top + h * 1.02f, left + w, top + h * 0.55f)
+            close()
+        }
+        canvas.drawPath(silhouette, iconPaint)
+        if (!sharkEnabled) {
+            iconStroke.color = Color.argb(alpha, 255, 209, 102)
+            iconStroke.strokeWidth = 1.6f * s
+            canvas.drawLine(
+                left - 1f * s, top + h * 1.05f,
+                left + w + 2f * s, top - h * 0.30f,
+                iconStroke
+            )
+        }
     }
 
     private fun drawPlaque(canvas: Canvas, title: String, line1: String, line2: String, accent: Int) {
@@ -1785,7 +2715,7 @@ class AquariumScene(
         var x = x
         var y = y
         val r = 1.2f + rng.nextFloat() * 2.6f
-        val speed = 9f + rng.nextFloat() * 15f
+        val speed = 20f + rng.nextFloat() * 24f
         val phase = rng.nextFloat() * 6.283f
         var age = 0f
 

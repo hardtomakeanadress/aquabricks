@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -71,6 +72,11 @@ class Fish(
      */
     var tailPhase: Float = rng.nextFloat() * 6.2831855f
         private set
+    /** Vertical kelp stems the fish gently steers around instead of crossing. */
+    var obstacleXs: FloatArray = FloatArray(0)
+    /** Set while the shark is in the tank; fish push away from its mouth. */
+    var threatX: Float = Float.NaN
+    var threatY: Float = Float.NaN
 
     // Swim speed scales with apparent body length. A 0.8-body stride keeps the
     // tail beat and the distance travelled in the same physical relationship.
@@ -86,21 +92,26 @@ class Fish(
     private val tailTempo: Float = 0.88f + rng.nextFloat() * 0.24f
     private val beatWobbleRate: Float = 0.30f + rng.nextFloat() * 0.50f
     private val beatWobbleAmount: Float = 0.02f + rng.nextFloat() * 0.05f
-    private val turnRate: Float = 3.5f + rng.nextFloat() * 4.0f
-    private val steeringRate: Float = 1.4f + rng.nextFloat() * 1.8f
-    private val verticalShare: Float = 0.62f + rng.nextFloat() * 0.28f
+    // Real tank fish glide in wide, committed arcs. A low angular turn rate keeps
+    // a fish from reversing direction a second after its last turn.
+    private val turnRateRad: Float = 0.9f + rng.nextFloat() * 0.8f
+    private val flipRate: Float = 4f + rng.nextFloat() * 2f
+    private val acceleration: Float = 0.9f + rng.nextFloat() * 0.8f
     private val weaveRate: Float = 0.8f + rng.nextFloat() * 0.9f
-    private val weaveStrength: Float = 0.16f + rng.nextFloat() * 0.18f
-    private val retargetMin: Float = 1.4f + rng.nextFloat() * 2.4f
-    private val retargetMax: Float = retargetMin + 0.6f + rng.nextFloat() * 2.2f
-    private val tripMinFraction: Float = 0.06f + rng.nextFloat() * 0.28f
-    private val pauseChance: Float = rng.nextFloat() * 0.55f
+    private val weaveAngle: Float = 0.04f + rng.nextFloat() * 0.10f
+    private val retargetMin: Float = 5f + rng.nextFloat() * 4f
+    private val retargetMax: Float = retargetMin + 2f + rng.nextFloat() * 4f
+    private val tripMinFraction: Float = 0.12f + rng.nextFloat() * 0.20f
+    private val pauseChance: Float = 0.40f + rng.nextFloat() * 0.40f
     private val depthRate: Float = 0.28f + rng.nextFloat() * 0.30f
     private var pauseRemaining = 0f
-    private val minX = 26f + baseDrawWidth * 0.5f
-    private val maxX = width - 26f - baseDrawWidth * 0.5f
-    private val minY = 34f + baseDrawHeight * 0.45f
-    private val maxY = sandY - 30f
+    // Bounds follow the fish's current projected size, not its maximum size.
+    // A far, small fish can therefore reach the glass; the old fixed margins
+    // left it stopping at an invisible wall well inside the tank.
+    private val minX: Float get() = drawWidth * 0.5f + 2f
+    private val maxX: Float get() = width - drawWidth * 0.5f - 2f
+    private val minY: Float get() = drawHeight * 0.5f + 2f + (1f - depth) * height * 0.10f
+    private val maxY: Float get() = sandY - drawHeight * 0.5f - 2f
     private var targetX = x
     private var targetY = y
     private var retargetIn = 0.4f + rng.nextFloat() * 4f
@@ -120,8 +131,8 @@ class Fish(
             pauseRemaining = 0f
             targetX = food!!.x
             targetY = food.y
-            val distance = hypot(food.x - x, food.y - y)
-            if (distance < drawHeight * 0.22f) {
+            val mouthDistance = hypot(food.x - mouthX(), food.y - mouthY())
+            if (mouthDistance < max(12f, drawHeight * 0.28f)) {
                 food.eaten = true
                 justAte = true
             }
@@ -134,7 +145,7 @@ class Fish(
             val distance = hypot(targetX - x, targetY - y)
             if (retargetIn <= 0f || distance < 18f) {
                 if (distance < 18f && rng.nextFloat() < pauseChance) {
-                    pauseRemaining = 0.5f + rng.nextFloat() * 1.8f
+                    pauseRemaining = 1f + rng.nextFloat() * 3f
                 } else {
                     pickTarget(rng)
                     retargetIn = retargetMin + rng.nextFloat() * (retargetMax - retargetMin)
@@ -153,49 +164,100 @@ class Fish(
         }
         val targetActivity = when {
             chasing -> chaseActivity
-            pauseRemaining > 0f -> 0.32f
+            pauseRemaining > 0f -> 0.22f
             burstRemaining > 0f -> burstActivity
             else -> cruiseBase + cruiseSwing * sin(age * cruiseTempo + phase)
         }
         activity += (targetActivity - activity) * (dt * 2.5f).coerceAtMost(1f)
 
         depth += (targetDepth - depth) * (dt * depthRate).coerceAtMost(1f)
-        val desiredSpeed = drawWidth * cruiseFactor * (0.85f + depth * 0.15f) * activity
+        var desiredSpeed = drawWidth * cruiseFactor * (0.85f + depth * 0.15f) * activity
+        if (chasing && hypot(targetX - x, targetY - y) < drawWidth * 0.5f) {
+            // Approach a pellet slowly and let suction do the last few pixels
+            // instead of orbiting it at full cruise speed.
+            desiredSpeed *= 0.65f
+        }
+        // Only start easing away in the last few pixels before the glass; the
+        // previous 10%-of-tank margin made fish turn around far from the edge.
+        val edgeX = 3f
+        val edgeY = 3f
+        val nearEdge = x < minX + edgeX || x > maxX - edgeX ||
+            y < minY + edgeY || y > maxY - edgeY
+        if (x < minX + edgeX && vx < 0f) targetX = max(targetX, width * 0.55f)
+        if (x > maxX - edgeX && vx > 0f) targetX = min(targetX, width * 0.45f)
+        if (y < minY + edgeY && vy < 0f) targetY = max(targetY, (minY + maxY) * 0.5f)
+        if (y > maxY - edgeY && vy > 0f) targetY = min(targetY, (minY + maxY) * 0.5f)
+        if (nearEdge) desiredSpeed *= 0.72f
+
         val dx = targetX - x
         val dy = targetY - y
-        val length = max(1f, hypot(dx, dy))
-        val directionX = dx / length
-        val directionY = dy / length
-        // A slow lateral weave keeps the path curved instead of a straight glide.
-        val weave = sin(age * weaveRate + phase) * desiredSpeed * weaveStrength
-        val desiredVx = directionX * desiredSpeed - directionY * weave
-        val desiredVy = directionY * desiredSpeed * verticalShare + directionX * weave * 0.65f
-        val steering = (dt * steeringRate).coerceAtMost(1f)
-        vx += (desiredVx - vx) * steering
-        vy += (desiredVy - vy) * steering
+        val targetHeading = atan2(dy, dx)
+        val currentSpeed = hypot(vx, vy)
+        val currentHeading = if (currentSpeed > 4f) atan2(vy, vx) else targetHeading
+        val weave = sin(age * weaveRate + phase) * weaveAngle
+        val headingChange = normalizeAngle(targetHeading + weave - currentHeading)
+        // A hungry fish may turn a little faster, but still follows an arc.
+        val turnLimit = if (chasing) max(turnRateRad, 2.0f) else turnRateRad
+        val maxTurn = turnLimit * dt
+        val heading = currentHeading + headingChange.coerceIn(-maxTurn, maxTurn)
+        val desiredVx = cos(heading) * desiredSpeed
+        val desiredVy = sin(heading) * desiredSpeed
+        val easing = (dt * acceleration).coerceAtMost(1f)
+        vx += (desiredVx - vx) * easing
+        vy += (desiredVy - vy) * easing
+
+        // Give a few tall kelp stems a soft collision field. The fish curves
+        // around them when it happens to pass close, then continues to its
+        // target; it is not trapped on one side of the tank.
+        val avoidRadius = max(24f, drawWidth * 0.55f)
+        for (obstacleX in obstacleXs) {
+            val dx = x - obstacleX
+            val distance = abs(dx)
+            if (distance < avoidRadius) {
+                val side = if (distance < 0.5f) {
+                    if (facingRight) -1f else 1f
+                } else {
+                    if (dx > 0f) 1f else -1f
+                }
+                val strength = (1f - distance / avoidRadius) * desiredSpeed * 1.4f
+                vx += side * strength * dt
+            }
+        }
+
+        // Panic response: a nearby shark pushes the fish away and makes it beat
+        // harder. The push is a force, not an instant teleport, so slower fish can
+        // still be caught while the rest scatter naturally.
+        if (!threatX.isNaN()) {
+            val awayX = x - threatX
+            val awayY = y - threatY
+            val distance = hypot(awayX, awayY)
+            val fleeRadius = max(80f, drawWidth * 3.4f)
+            if (distance < fleeRadius) {
+                val push = 1f - distance / fleeRadius
+                val inv = 1f / max(distance, 1f)
+                vx += awayX * inv * desiredSpeed * 1.9f * push * dt
+                vy += awayY * inv * desiredSpeed * 1.9f * push * dt
+            }
+        }
 
         x += vx * dt
         y += vy * dt
 
         if (x < minX) {
             x = minX
-            vx = abs(vx) * 0.8f
-            targetX = clampX(width * 0.6f)
+            vx = max(0f, vx)
         }
         if (x > maxX) {
             x = maxX
-            vx = -abs(vx) * 0.8f
-            targetX = clampX(width * 0.4f)
+            vx = min(0f, vx)
         }
         if (y < minY) {
             y = minY
-            vy = abs(vy) * 0.6f
-            targetY = clampY(maxY * 0.7f)
+            vy = max(0f, vy)
         }
         if (y > maxY) {
             y = maxY
-            vy = -abs(vy) * 0.6f
-            targetY = clampY(minY + 20f)
+            vy = min(0f, vy)
         }
 
         if (vx > 8f) facingRight = true
@@ -204,7 +266,7 @@ class Fish(
         // horizontal scale eases from +1 to -1 over ~0.4 s, so a direction change
         // looks like the fish banking around, not flipping a card.
         val targetScale = if (facingRight) 1f else -1f
-        turnScaleX += (targetScale - turnScaleX) * (dt * turnRate).coerceAtMost(1f)
+        turnScaleX += (targetScale - turnScaleX) * (dt * flipRate).coerceAtMost(1f)
         // Tail-beat frequency follows swim speed, not a random timer. A fish
         // advances roughly 0.8 body lengths per tail beat, so a fish that barely
         // moves cannot keep beating its tail at full speed.
@@ -226,10 +288,18 @@ class Fish(
             return
         }
         // Prefer a genuinely different part of the tank, but let each fish choose
-        // its own trip length. Some hover locally; others cross the whole tank.
+        // its own trip length. Most waypoints lie ahead of the current heading;
+        // only occasionally does a fish commit to crossing back the other way.
         val minimumTrip = width * tripMinFraction
+        val forward = if (vx >= 0f || (abs(vx) < 1f && facingRight)) 1f else -1f
+        val preferAhead = rng.nextFloat() < 0.74f
         repeat(5) {
-            targetX = minX + rng.nextFloat() * (maxX - minX)
+            targetX = if (preferAhead) {
+                (x + forward * width * (0.12f + rng.nextFloat() * 0.34f))
+                    .coerceIn(minX, maxX)
+            } else {
+                minX + rng.nextFloat() * (maxX - minX)
+            }
             targetY = minY + rng.nextFloat() * (maxY - minY)
             targetDepth = pickDepth(rng)
             // Weight vertical distance so fish explore the water column instead
@@ -241,6 +311,28 @@ class Fish(
         targetX = if (x < width * 0.5f) maxX else minX
         targetY = if (y < (minY + maxY) * 0.5f) maxY else minY
         targetDepth = pickDepth(rng)
+    }
+
+    private fun normalizeAngle(angle: Float): Float {
+        var value = angle
+        val tau = 6.2831855f
+        while (value > 3.1415927f) value -= tau
+        while (value < -3.1415927f) value += tau
+        return value
+    }
+
+    /** World position of the mouth as rendered, including facing and pitch. */
+    internal fun mouthX(): Float {
+        val local = drawWidth * 0.42f * turnScaleX
+        return x + local * cos(tilt)
+    }
+
+    internal fun mouthY(): Float {
+        val local = drawWidth * 0.42f * turnScaleX
+        // Match the renderer's depth lift and bob so a pellet disappears exactly
+        // where the visible mouth is, not at the unprojected simulation point.
+        val visualY = y - (1f - depth) * height * 0.10f + sin(age * 1.35f + phase) * 0.8f
+        return visualY + local * sin(tilt)
     }
 
     /**

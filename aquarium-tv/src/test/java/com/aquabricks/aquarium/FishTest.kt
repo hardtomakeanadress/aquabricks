@@ -56,14 +56,44 @@ class FishTest {
         val rng = Random(22)
         val food = Food(fish.x + 40f, fish.y + 10f, rng)
         var ate = false
+        var closestMouth = Float.MAX_VALUE
         repeat(600) {
             fish.update(1f / 30f, food, rng)
+            closestMouth = minOf(
+                closestMouth,
+                hypot(food.x - fish.mouthX(), food.y - fish.mouthY())
+            )
             if (food.eaten || fish.justAte) {
                 ate = true
                 return@repeat
             }
         }
-        assertTrue("fish never reached the food", ate)
+        assertTrue("fish never reached the food; closest mouth=${closestMouth}px", ate)
+    }
+
+    @Test
+    fun foodIsTakenAtTheMouthNotTheBodyCentre() {
+        val fish = Fish(
+            meta = FishMeta("mouth", "Nemo", "", "right", 1L, 120, 60),
+            bitmap = sprite(),
+            width = 640f,
+            height = 360f,
+            sandY = 302f,
+            rng = Random(111)
+        )
+        val rng = Random(112)
+        repeat(30) { fish.update(1f / 30f, null, rng) }
+        val mouthFood = Food(fish.mouthX(), fish.mouthY(), rng)
+        fish.update(1f / 30f, mouthFood, rng)
+        assertTrue("food at the mouth was not eaten", mouthFood.eaten || fish.justAte)
+
+        val tailFood = Food(
+            2f * fish.x - fish.mouthX(),
+            fish.mouthY(),
+            rng
+        )
+        fish.update(1f / 30f, tailFood, rng)
+        assertFalse("food at the tail was eaten through the body", tailFood.eaten)
     }
 
     @Test
@@ -101,6 +131,65 @@ class FishTest {
             "cruise speed should scale with body length, peak was $fastestCruise",
             fastestCruise > 20f
         )
+    }
+
+    @Test
+    fun fishDoNotFlipDirectionsEverySecond() {
+        val fish = Fish(
+            meta = FishMeta("calm", "Nemo", "", "right", 1L, 120, 60),
+            bitmap = sprite(),
+            width = 640f,
+            height = 360f,
+            sandY = 302f,
+            rng = Random(121)
+        )
+        val rng = Random(122)
+        var lastSign = 0
+        var lastFlip = -100f
+        var flips = 0
+        var elapsed = 0f
+        repeat(6_000) {
+            fish.update(1f / 30f, null, rng)
+            elapsed += 1f / 30f
+            val sign = when {
+                fish.vx > 5f -> 1
+                fish.vx < -5f -> -1
+                else -> 0
+            }
+            if (sign != 0 && lastSign != 0 && sign != lastSign) {
+                flips++
+                assertTrue(
+                    "direction reversed only ${elapsed - lastFlip}s after the previous flip",
+                    elapsed - lastFlip > 1.2f
+                )
+                lastFlip = elapsed
+            }
+            if (sign != 0) lastSign = sign
+        }
+        assertTrue("fish flipped direction $flips times in 200 s", flips < 18)
+    }
+
+    @Test
+    fun fishCanReachTheGlassEdgesInsteadOfStoppingInsideAnInvisibleWall() {
+        val fish = Fish(
+            meta = FishMeta("edges", "Nemo", "", "right", 1L, 120, 60),
+            bitmap = sprite(),
+            width = 640f,
+            height = 360f,
+            sandY = 302f,
+            rng = Random(131)
+        )
+        val rng = Random(132)
+        var leftGap = Float.MAX_VALUE
+        var rightGap = Float.MAX_VALUE
+        repeat(20_000) {
+            fish.update(1f / 30f, null, rng)
+            val half = fish.drawWidth * 0.5f
+            leftGap = minOf(leftGap, fish.x - (half + 2f))
+            rightGap = minOf(rightGap, (640f - half - 2f) - fish.x)
+        }
+        assertTrue("fish stopped $leftGap px inside the left glass", leftGap < 8f)
+        assertTrue("fish stopped $rightGap px inside the right glass", rightGap < 8f)
     }
 
     @Test

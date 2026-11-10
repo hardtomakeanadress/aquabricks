@@ -73,31 +73,52 @@ dist/            copied APKs after a build
   current landscape and the **PRESS LEFT / RIGHT** hint are shown in the top-left
   corner, and the choice is remembered across launches.
 - Pixel-art decor includes tall swaying kelp, feathery ferns, broad-leaf anubias,
-  sea grass, a red branching coral, sea fan, tube sponges, brain coral, urchin,
-  anemone, a castle, a broken shipwreck, chest, rocks, starfish, shells, drifting
-  caustic ribbons, dappled sunlight pools, bubbles and plankton. The soft plants
-  are animated and deliberately drawn as clear silhouettes instead of featureless
-  blobs.
+  sea grass, floating surface leaves with dangling roots, a red branching coral,
+  sea fan, tube sponges, brain coral, urchin, anemone, a castle, a broken
+  shipwreck, chest, rocks, starfish, shells, drifting caustic ribbons, dappled
+  sunlight pools, bubbles and plankton. The soft plants are animated and
+  deliberately drawn as clear silhouettes instead of featureless blobs.
+- A 30-second underwater ambience loop, built from a CC0 field recording by
+  Kinoton, plays at low volume. Press
+  **UP** to turn sound on and **DOWN** to turn it off. **M** or the remote's
+  **MUTE** button also toggles it; the choice is remembered.
+- Hold **OK** on the remote (or press **S** on a keyboard) to turn the shark
+  on or off. A small shark icon beside the sound icon shows the state; the
+  choice is remembered. Disabling it lets an active shark recede into the
+  distance instead of vanishing.
+- The screen is kept clear: after the brief startup hints, only the fish, their
+  small names, a compact landscape chip and a tiny sound icon remain.
 - Fish swim with a carangiform-style traveling wave: the head stays rigid, the rear
   body bends smoothly, and the tail beat frequency follows the actual swim speed.
   Whole-body pitch is smoothed; there is no yaw oscillation or body stretching.
-  Direction changes ease through an edge-on turn instead of an instant mirror flip.
-  Each fish has its own tail phase, tempo and activity rhythm, so a school does not
-  beat, slow down or dart in lockstep. Fish prefer distant waypoints, so they roam
-  both halves and the full water column. Occasional bursts, depth scaling and
-  shadows remain.
+  Fish glide through calm, committed arcs with a limited turn rate, occasional
+  pauses and independent waypoint timing, so they do not ping-pong across the tank
+  or flip direction every second. Direction changes ease through an edge-on turn
+  instead of an instant mirror flip. Each fish has its own tail phase, tempo and
+  activity rhythm, so a school does not beat, slow down or dart in lockstep.
+  Occasional bursts and shadows remain.
 - Fish also move through a depth axis: they swim toward and away from the glass,
   shrinking, fading slightly and sitting noticeably higher when farther away.
   Waypoints deliberately visit both the near and far glass, so front-to-back
   swimming is visible rather than just left/right motion. Far fish are drawn first
   and near fish last.
+- A large shark makes a rare, irregular pass: about a minute after launch, then
+  every 2-4 minutes. A traveling wave runs through its whole body, the pectoral
+  fin and jaw move independently, and it banks and surges instead of sliding on
+  rails. It tracks a fish vertically, lunges at the end, scatters the school and
+  eats one or two fish. It never takes the last fish. Eaten fish are deleted from
+  the tank index, so they stay gone after a restart and disappear from the phone's
+  "manage fish" list.
 - The fish are deliberately small enough for two or three to share the tank, and
   each one has its name in a small label underneath. New arrivals still get a
   bubble burst and a name plaque.
 - Brick colours are shown untouched: the fish are drawn after all water overlays, so
   the scanned LEGO palette stays accurate on the TV.
-- Press **OK / Enter / Space** (or tap the screen) to drop food; fish chase and eat it.
-- The tank name and LAN address appear subtly at the bottom of the screen.
+- Press **OK / Enter / Space** (or tap the screen) to drop food. Pellets sink
+  slowly and are taken at the fish's mouth, with a small bubble puff, rather than
+  disappearing through the body.
+- The tank name and LAN address are shown during startup/empty-tank hints; the
+  normal tank view stays free of persistent instructions.
 
 ## Build
 
@@ -110,6 +131,11 @@ echo "sdk.dir=$HOME/Android/Sdk" > local.properties
 
 ./gradlew :aquarium-tv:assembleDebug :fish-scanner:assembleDebug
 ```
+
+The ambience loop is committed as an OGG asset. It is built from
+["Underwater Ambience" by Kinoton](https://freesound.org/s/393819/), released
+under Creative Commons 0. To regenerate it (requires `ffmpeg`), run
+`python3 scripts/generate_ambience.py`.
 
 APKs:
 
@@ -211,20 +237,22 @@ The Chromecast HD has 1.5 GB of RAM and a modest SoC, so the tank:
 - renders at 640×360 and lets the GPU upscale with bilinear filtering, so scanned
   fish stay readable instead of showing a field of hard pixel blocks,
 - pre-renders the static aquascape and vignette into one bitmap, then composites
-  animated plant layers from two transparent overlays redrawn at 15 fps,
+  animated plant layers (including the floating leaves) from two transparent
+  overlays redrawn at 15 fps,
 - draws fish sprites at a 2× texture supersample, uses `drawBitmapMesh` for the
   tail/body wave, and uses a hardware surface canvas for the filtered upscale,
 - caps each fish at 30% of the tank width and 13% of the tank height, so even a
   very long, thin scan fits without invalidating its swim bounds; unreadable
   sprites are skipped,
 - uses 30 fps and caps the tank at 64 fish,
-- ships with no AndroidX/Compose runtime and no image-loading libraries.
+- ships with no AndroidX/Compose runtime and no image-loading libraries; audio is
+  a single framework `MediaPlayer` loop (about 361 KB) with no per-frame work.
 
-Measured on the Chromecast HD: the TV APK is about **928 KB**, the running process
-uses about **70 MB PSS** (8.1 MB Java heap, 7.9 MB native, 4.4 MB graphics), and
-the render thread uses roughly **65% of one core** with one fish at 30 fps (about
-16% of the four-core CPU). The 640×360 buffer costs more than the old 512×288
-frame but keeps scanned fish legible.
+Measured on the Chromecast HD: the TV APK is about **1.33 MB**, the running process
+uses about **66 MB PSS** (9.8 MB Java heap, 10.2 MB native, 4.4 MB graphics), and
+the render thread uses roughly **67% of one core** with one fish at 30 fps (about
+17% of the four-core CPU). The 640×360 buffer and 2× fish texture supersample cost
+more than the old 512×288 frame but keep scanned fish legible.
 
 ## Testing
 

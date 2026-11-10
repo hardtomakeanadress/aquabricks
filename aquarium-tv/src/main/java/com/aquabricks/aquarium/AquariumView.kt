@@ -2,23 +2,53 @@ package com.aquabricks.aquarium
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Build
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.ViewConfiguration
+import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.min
 
 /**
  * Owns the render thread. The scene draws into a small 640x360 bitmap which is
- * blitted to the TV surface with nearest-neighbour filtering (the pixel-art look)
- * and letterboxed to whatever aspect ratio the display has.
+ * blitted to the TV surface with filtered upscaling and letterboxed to whatever
+ * aspect ratio the display has.
  */
 class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
 
-    val scene = AquariumScene(BUFFER_WIDTH, BUFFER_HEIGHT)
+    private val aiBackdrops = loadAiBackdrops(context)
+    private fun load(resource: Int): Bitmap? = runCatching {
+        BitmapFactory.decodeResource(context.resources, resource)
+    }.getOrNull()
+    private val aiTreasure = load(R.drawable.ai_treasure)
+    private val aiReeds = load(R.drawable.ai_reeds)
+    private val aiTurtle = load(R.drawable.ai_turtle)
+    private val aiLeaf = load(R.drawable.ai_leaf)
+    val scene = AquariumScene(
+        BUFFER_WIDTH,
+        BUFFER_HEIGHT,
+        aiBackdrops,
+        aiTreasure,
+        aiReeds,
+        aiTurtle,
+        aiLeaf
+    )
+    var onThemeCycle: ((Int) -> Unit)? = null
+    var onMusicToggle: (() -> Unit)? = null
+    var onFishEaten: ((FishMeta) -> Unit)?
+        get() = scene.onFishEaten
+        set(value) { synchronized(scene) { scene.onFishEaten = value } }
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var downAt = 0L
 
     private val frame = Bitmap.createBitmap(BUFFER_WIDTH, BUFFER_HEIGHT, Bitmap.Config.ARGB_8888)
     private val frameCanvas = Canvas(frame)
@@ -42,7 +72,47 @@ class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callb
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
-        setOnClickListener { feed() }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                downAt = event.eventTime
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                val dx = event.x - downX
+                val dy = event.y - downY
+                if (abs(dx) > touchSlop * 2f && abs(dx) > abs(dy)) {
+                    val delta = if (dx > 0f) 1 else -1
+                    if (onThemeCycle != null) onThemeCycle?.invoke(delta) else cycleTheme(delta)
+                    performClick()
+                    return true
+                }
+                if (hypot(dx, dy) <= touchSlop && event.eventTime - downAt < 450L) {
+                    when {
+                        event.y < height * 0.20f && event.x < width * 0.28f -> {
+                            if (onThemeCycle != null) onThemeCycle?.invoke(1) else cycleTheme(1)
+                        }
+                        event.y < height * 0.20f && event.x > width * 0.72f -> {
+                            onMusicToggle?.invoke()
+                        }
+                        else -> feed()
+                    }
+                }
+                performClick()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> return true
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -208,6 +278,14 @@ class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callb
         synchronized(scene) { scene.setTheme(theme, announce) }
     }
 
+    fun setMusicEnabled(enabled: Boolean, announce: Boolean = false) {
+        synchronized(scene) { scene.setMusicEnabled(enabled, announce) }
+    }
+
+    fun setSharkEnabled(enabled: Boolean, announce: Boolean = false) {
+        synchronized(scene) { scene.setSharkEnabled(enabled, announce) }
+    }
+
     fun cycleTheme(delta: Int): AquariumTheme =
         synchronized(scene) { scene.cycleTheme(delta) }
 
@@ -221,6 +299,28 @@ class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callb
 
     fun setServerInfo(ip: String, port: Int, running: Boolean) {
         synchronized(scene) { scene.setServerInfo(ip, port, running) }
+    }
+
+    private fun loadAiBackdrops(context: Context): Map<AquariumTheme, Bitmap> {
+        val resources = mapOf(
+            AquariumTheme.REEF to R.drawable.background_reef,
+            AquariumTheme.KELP_FOREST to R.drawable.background_kelp,
+            AquariumTheme.SUNKEN_WRECK to R.drawable.background_wreck,
+            AquariumTheme.RIVERBED to R.drawable.background_river
+        )
+        return resources.mapNotNull { (theme, resource) ->
+            val bitmap = runCatching {
+                BitmapFactory.decodeResource(context.resources, resource)
+            }.getOrNull() ?: return@mapNotNull null
+            val scaled = if (bitmap.width == BUFFER_WIDTH && bitmap.height == BUFFER_HEIGHT) {
+                bitmap
+            } else {
+                Bitmap.createScaledBitmap(bitmap, BUFFER_WIDTH, BUFFER_HEIGHT, true).also {
+                    bitmap.recycle()
+                }
+            }
+            theme to scaled
+        }.toMap()
     }
 
     companion object {

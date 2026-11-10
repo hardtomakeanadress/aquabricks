@@ -1,6 +1,7 @@
 package com.aquabricks.aquarium
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -12,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
@@ -81,6 +83,45 @@ class AquariumSceneTest {
         )
         scene.feed()
         assertTrue("feeding did not recover after the pellets expired", scene.foodPositions().isNotEmpty())
+    }
+
+    @Test
+    fun aiBackdropsRenderFourDistinctScenes() {
+        val resources = RuntimeEnvironment.getApplication().resources
+        val resourcesForTheme = mapOf(
+            AquariumTheme.REEF to R.drawable.background_reef,
+            AquariumTheme.KELP_FOREST to R.drawable.background_kelp,
+            AquariumTheme.SUNKEN_WRECK to R.drawable.background_wreck,
+            AquariumTheme.RIVERBED to R.drawable.background_river
+        )
+        val backdrops = resourcesForTheme.mapValues { (_, resource) ->
+            BitmapFactory.decodeResource(resources, resource)
+        }
+        for (bitmap in backdrops.values) {
+            assertNotNull("AI backdrop failed to decode", bitmap)
+        }
+        val rendered = LinkedHashMap<AquariumTheme, Bitmap>()
+        for (theme in AquariumTheme.values()) {
+            val scene = AquariumScene(640, 360, backdrops)
+            scene.setTheme(theme, announce = false)
+            scene.setLoaded(true)
+            scene.addFish(
+                FishMeta("ai-${theme.name}", "Luna", "Mia", "right", 1L, 120, 70),
+                fishBitmap(),
+                announce = false
+            )
+            val frame = render(scene, steps = 3)
+            rendered[theme] = frame
+            savePng(frame, "ai-${theme.name.lowercase()}.png")
+        }
+        assertTrue(
+            "reef and kelp backdrops rendered the same",
+            differingPixels(rendered.getValue(AquariumTheme.REEF), rendered.getValue(AquariumTheme.KELP_FOREST)) > 20_000
+        )
+        assertTrue(
+            "wreck and river backdrops rendered the same",
+            differingPixels(rendered.getValue(AquariumTheme.SUNKEN_WRECK), rendered.getValue(AquariumTheme.RIVERBED)) > 20_000
+        )
     }
 
     @Test

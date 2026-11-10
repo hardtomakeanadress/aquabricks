@@ -13,6 +13,7 @@ class Food(
 
     fun update(dt: Float) {
         age += dt
-        y += (15f + (phase % 3f) * 2f) * dt
+        // Slow, sinking food gives fish time to orient and take it at the mouth.
+        y += (9f + (phase % 3f) * 1.8f) * dt
     }
 }

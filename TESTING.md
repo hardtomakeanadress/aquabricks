@@ -11,7 +11,7 @@ a JDK and the Android SDK; instrumented tests need an Android device or emulator
 |------|----------------|
 | `HttpRequestReaderTest` | request line/query parsing, case-insensitive headers, exact binary bodies, truncated bodies, oversized bodies, expired request deadline, malformed traffic |
 | `FishRepositoryTest` | fish survive a repository restart, overlapping repository instances cannot overwrite each other, JSON persistence, name sanitisation, 64-fish cap, corrupt index recovery, missing-PNG recovery, delete semantics |
-| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and multiple fish do not beat in lockstep; whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves, the full water column, and both the near and far depth planes; depth changes apparent size without escaping the tank |
+| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food and must take it at the mouth, not through the body centre; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and multiple fish do not beat in lockstep; direction reversals are infrequent and spaced out; whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves, the full water column, and both the near and far depth planes; depth changes apparent size without escaping the tank |
 | `AquariumSceneTest` (Robolectric, native Skia) | the real scene renders a non-black, colourful frame; a fish changes the frame; 2.5 s of updates changes it again; food sinks, expires and feeding recovers; theme switching rebuilds a different layout without losing fish and reverse cycling wraps; a fully transparent sprite is skipped without crashing; debug PNGs are written |
 | `FishServerRobolectricTest` | real HTTP server + PNG decoding + callbacks + JSON listing + delete; non-PNG rejection; UDP discovery beacon reply |
 
@@ -145,7 +145,14 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
 - [ ] Flip a fish whose head faces left; it swims head-first in both directions.
 - [ ] Send three fish; names appear in arrival plaques.
 - [ ] Force-stop and reopen the TV app; all three fish return.
-- [ ] Press OK several times; food sinks and fish chase it.
+- [ ] Press OK several times; food sinks slowly, fish approach it, and each pellet
+      disappears at a mouth with a small bubble puff rather than through the body.
+- [ ] Watch a fish for a minute: it should glide in arcs, pause occasionally, and
+      not reverse direction every second.
+- [ ] Switch to Kelp Forest or Riverbed and confirm the floating surface leaves
+      with roots are visible and animated.
+- [ ] Press DOWN to turn the ambience off and UP to turn it back on; the tiny
+      sound icon changes. Restart the app and confirm the audio choice persists.
 - [ ] Let the tank run 30 minutes; no memory growth, no frame drops, no drift.
 - [ ] Try manual address entry with discovery blocked (hotspot/guest network).
 - [ ] Open **Manage fish**, remove one, and confirm it disappears from the TV.
@@ -153,7 +160,7 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
 
 ## Current verification status (2026-11-10)
 
-- **83 JVM/Robolectric tests, 0 failures** — 37 in `aquarium-tv`, 46 in `fish-scanner`.
+- **85 JVM/Robolectric tests, 0 failures** — 39 in `aquarium-tv`, 46 in `fish-scanner`.
 - **8 instrumented tests, 0 failures** — 2 tank tests and 6 scanner tests, run on both
   a **Pixel 7 (Android 16 / API 37)** and the **Chromecast HD (Android 14 / API 34)**.
   The tank suite was re-run on the Chromecast after the sizing fix: 2/2 passed. They
@@ -169,10 +176,10 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
   fish persisted. `scripts/phone_e2e.sh` automates this for a phone.
 - **Chromecast performance:** with static scenery baked, animated plants cached in
   two 15 fps overlays and fish sprites pre-scaled with a 2× texture supersample,
-  the render thread uses about **65% of one core** at 640×360 / 30 fps with one
-  fish. The TV APK is about **928 KB** and the process uses about **70 MB PSS**
-  (8.1 MB Java heap, 7.9 MB native, 4.4 MB graphics). The tank is installed and
-  running.
+  the render thread uses about **67% of one core** at 640×360 / 30 fps with one
+  fish. The TV APK is about **1.33 MB** (including the 361 KB ambience loop) and
+  the process uses about **66 MB PSS** (9.8 MB Java heap, 10.2 MB native, 4.4 MB
+  graphics). The tank is installed and running.
 
 The scanner tests also found two real bugs that pure image maths missed: Espresso 3.5
 could not run on Android 16 (the smoke test now uses plain `ActivityScenario`), and
