@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="deep">#0E2A36</color>
+    <color name="deep_black">#081A22</color>
+    <color name="teal">#2A6B72</color>
+    <color name="teal_dim">#3A5F66</color>
+    <color name="accent">#FFD166</color>
+    <color name="accent_pressed">#D9AD4E</color>
+    <color name="cream">#FFF4D6</color>
+    <color name="coral">#EF7A6B</color>
+    <color name="muted">#8FB3B0</color>
+</resources>
