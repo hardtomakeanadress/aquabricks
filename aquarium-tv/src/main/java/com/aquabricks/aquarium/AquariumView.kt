@@ -23,7 +23,9 @@ class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callb
     private val frame = Bitmap.createBitmap(BUFFER_WIDTH, BUFFER_HEIGHT, Bitmap.Config.ARGB_8888)
     private val frameCanvas = Canvas(frame)
     private val outputPaint = Paint().apply {
-        isFilterBitmap = false
+        // The scene buffer is authored at 640x360. Filtering the final 3x upscale
+        // keeps scanned fish readable instead of showing a field of hard blocks.
+        isFilterBitmap = true
         isAntiAlias = false
         isDither = false
     }
@@ -222,8 +224,8 @@ class AquariumView(context: Context) : SurfaceView(context), SurfaceHolder.Callb
     }
 
     companion object {
-        const val BUFFER_WIDTH = 512
-        const val BUFFER_HEIGHT = 288
+        const val BUFFER_WIDTH = 640
+        const val BUFFER_HEIGHT = 360
         private const val FRAME_MS = 33L
     }
 }

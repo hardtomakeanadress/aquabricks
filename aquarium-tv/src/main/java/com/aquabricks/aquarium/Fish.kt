@@ -31,19 +31,22 @@ class Fish(
     private var targetDepth = depth
     // Keep 2-3 scanned fish comfortably spaced. The sprite is prepared at the
     // largest depth; the draw code scales it down when the fish is farther away.
-    private val maxDrawHeight: Float = (40f + 22f) * (height / 360f)
-    // Pre-scale to the exact maximum on-screen size: drawBitmapMesh then samples
-    // a tiny bitmap every frame instead of a 220 px one, which matters with many
-    // fish. The width cap prevents a very long, thin scan from exceeding the tank.
+    private val maxDrawHeight: Float = height * 0.13f
+    // Keep twice as many texture pixels as the fish occupies on screen. The fish
+    // is still drawn small, but LEGO studs, faces and the thin brick joints
+    // survive downscaling instead of turning into aliased mush.
     val sprite: Bitmap = normalise(
         bitmap,
         mirror = meta.facing.equals("left", ignoreCase = true),
-        targetHeight = maxDrawHeight.roundToInt().coerceAtLeast(9),
-        maxWidth = (width * 0.38f).roundToInt().coerceAtLeast(9)
+        targetHeight = (maxDrawHeight * SUPERSAMPLE).roundToInt().coerceAtLeast(9),
+        maxWidth = (width * 0.30f * SUPERSAMPLE).roundToInt().coerceAtLeast(9)
     )
-    private val baseDrawHeight: Float = sprite.height.toFloat()
-    private val baseDrawWidth: Float = sprite.width.toFloat()
-    private val depthScale: Float get() = 0.68f + 0.32f * depth
+    private val baseDrawHeight: Float = sprite.height / SUPERSAMPLE
+    private val baseDrawWidth: Float = sprite.width / SUPERSAMPLE
+    // The depth range is deliberately wide: far fish are visibly smaller, dimmer
+    // and higher in the tank, so moving toward the back reads as 3D rather than
+    // as just another left/right slide.
+    private val depthScale: Float get() = 0.55f + 0.45f * depth
     val drawHeight: Float get() = baseDrawHeight * depthScale
     val drawWidth: Float get() = baseDrawWidth * depthScale
 
@@ -71,25 +74,36 @@ class Fish(
 
     // Swim speed scales with apparent body length. A 0.8-body stride keeps the
     // tail beat and the distance travelled in the same physical relationship.
-    private val cruiseFactor: Float = 0.65f + rng.nextFloat() * 0.25f
+    private val cruiseFactor: Float = 0.55f + rng.nextFloat() * 0.20f
     // Every fish gets its own metabolic tempo and beat character. The old shared
     // 0.7 rad/s activity sine made a whole tank slow down and speed up together,
     // and the common speed-to-tail mapping made the beats look choreographed.
     private val cruiseTempo: Float = 0.35f + rng.nextFloat() * 0.65f
-    private val cruiseSwing: Float = 0.06f + rng.nextFloat() * 0.12f
+    private val cruiseSwing: Float = 0.08f + rng.nextFloat() * 0.14f
     private val cruiseBase: Float = 0.90f + rng.nextFloat() * 0.12f
-    private val chaseActivity: Float = 1.60f + rng.nextFloat() * 0.45f
-    private val burstActivity: Float = 1.40f + rng.nextFloat() * 0.30f
+    private val chaseActivity: Float = 1.55f + rng.nextFloat() * 0.40f
+    private val burstActivity: Float = 1.35f + rng.nextFloat() * 0.30f
     private val tailTempo: Float = 0.88f + rng.nextFloat() * 0.24f
     private val beatWobbleRate: Float = 0.30f + rng.nextFloat() * 0.50f
     private val beatWobbleAmount: Float = 0.02f + rng.nextFloat() * 0.05f
+    private val turnRate: Float = 3.5f + rng.nextFloat() * 4.0f
+    private val steeringRate: Float = 1.4f + rng.nextFloat() * 1.8f
+    private val verticalShare: Float = 0.62f + rng.nextFloat() * 0.28f
+    private val weaveRate: Float = 0.8f + rng.nextFloat() * 0.9f
+    private val weaveStrength: Float = 0.16f + rng.nextFloat() * 0.18f
+    private val retargetMin: Float = 1.4f + rng.nextFloat() * 2.4f
+    private val retargetMax: Float = retargetMin + 0.6f + rng.nextFloat() * 2.2f
+    private val tripMinFraction: Float = 0.06f + rng.nextFloat() * 0.28f
+    private val pauseChance: Float = rng.nextFloat() * 0.55f
+    private val depthRate: Float = 0.28f + rng.nextFloat() * 0.30f
+    private var pauseRemaining = 0f
     private val minX = 26f + baseDrawWidth * 0.5f
     private val maxX = width - 26f - baseDrawWidth * 0.5f
     private val minY = 34f + baseDrawHeight * 0.45f
     private val maxY = sandY - 30f
     private var targetX = x
     private var targetY = y
-    private var retargetIn = rng.nextFloat() * 3f
+    private var retargetIn = 0.4f + rng.nextFloat() * 4f
     private var burstRemaining = 0f
     private var untilNextBurst = 3f + rng.nextFloat() * 6f
 
@@ -103,6 +117,7 @@ class Fish(
         justAte = false
         val chasing = food != null && !food.eaten && food.y < sandY - 6f
         if (chasing) {
+            pauseRemaining = 0f
             targetX = food!!.x
             targetY = food.y
             val distance = hypot(food.x - x, food.y - y)
@@ -110,12 +125,20 @@ class Fish(
                 food.eaten = true
                 justAte = true
             }
+        } else if (pauseRemaining > 0f) {
+            // Fish pause independently at waypoints instead of every fish turning
+            // and reversing on the same beat.
+            pauseRemaining -= dt
         } else {
             retargetIn -= dt
             val distance = hypot(targetX - x, targetY - y)
             if (retargetIn <= 0f || distance < 18f) {
-                pickTarget(rng)
-                retargetIn = 1.8f + rng.nextFloat() * 3.4f
+                if (distance < 18f && rng.nextFloat() < pauseChance) {
+                    pauseRemaining = 0.5f + rng.nextFloat() * 1.8f
+                } else {
+                    pickTarget(rng)
+                    retargetIn = retargetMin + rng.nextFloat() * (retargetMax - retargetMin)
+                }
             }
         }
 
@@ -130,23 +153,24 @@ class Fish(
         }
         val targetActivity = when {
             chasing -> chaseActivity
+            pauseRemaining > 0f -> 0.32f
             burstRemaining > 0f -> burstActivity
             else -> cruiseBase + cruiseSwing * sin(age * cruiseTempo + phase)
         }
         activity += (targetActivity - activity) * (dt * 2.5f).coerceAtMost(1f)
 
-        depth += (targetDepth - depth) * (dt * 0.55f).coerceAtMost(1f)
-        val desiredSpeed = drawWidth * cruiseFactor * (0.9f + depth * 0.1f) * activity
+        depth += (targetDepth - depth) * (dt * depthRate).coerceAtMost(1f)
+        val desiredSpeed = drawWidth * cruiseFactor * (0.85f + depth * 0.15f) * activity
         val dx = targetX - x
         val dy = targetY - y
         val length = max(1f, hypot(dx, dy))
         val directionX = dx / length
         val directionY = dy / length
         // A slow lateral weave keeps the path curved instead of a straight glide.
-        val weave = sin(age * 1.25f + phase) * desiredSpeed * 0.22f
+        val weave = sin(age * weaveRate + phase) * desiredSpeed * weaveStrength
         val desiredVx = directionX * desiredSpeed - directionY * weave
-        val desiredVy = directionY * desiredSpeed * 0.62f + directionX * weave * 0.65f
-        val steering = (dt * 2.2f).coerceAtMost(1f)
+        val desiredVy = directionY * desiredSpeed * verticalShare + directionX * weave * 0.65f
+        val steering = (dt * steeringRate).coerceAtMost(1f)
         vx += (desiredVx - vx) * steering
         vy += (desiredVy - vy) * steering
 
@@ -180,7 +204,7 @@ class Fish(
         // horizontal scale eases from +1 to -1 over ~0.4 s, so a direction change
         // looks like the fish banking around, not flipping a card.
         val targetScale = if (facingRight) 1f else -1f
-        turnScaleX += (targetScale - turnScaleX) * (dt * 6f).coerceAtMost(1f)
+        turnScaleX += (targetScale - turnScaleX) * (dt * turnRate).coerceAtMost(1f)
         // Tail-beat frequency follows swim speed, not a random timer. A fish
         // advances roughly 0.8 body lengths per tail beat, so a fish that barely
         // moves cannot keep beating its tail at full speed.
@@ -201,19 +225,35 @@ class Fish(
             targetY = (minY + maxY) * 0.5f
             return
         }
-        // Prefer a genuinely different part of the tank. This prevents a fish
-        // from orbiting one corner forever and makes two or three fish explore.
-        val minimumTrip = width * 0.22f
+        // Prefer a genuinely different part of the tank, but let each fish choose
+        // its own trip length. Some hover locally; others cross the whole tank.
+        val minimumTrip = width * tripMinFraction
         repeat(5) {
             targetX = minX + rng.nextFloat() * (maxX - minX)
             targetY = minY + rng.nextFloat() * (maxY - minY)
-            targetDepth = 0.2f + rng.nextFloat() * 0.8f
-            if (hypot(targetX - x, targetY - y) >= minimumTrip) return
+            targetDepth = pickDepth(rng)
+            // Weight vertical distance so fish explore the water column instead
+            // of satisfying every trip with a purely horizontal move.
+            val trip = hypot(targetX - x, (targetY - y) * 1.8f)
+            if (trip >= minimumTrip) return
         }
         // If the tank is tiny, go to the opposite corner.
         targetX = if (x < width * 0.5f) maxX else minX
         targetY = if (y < (minY + maxY) * 0.5f) maxY else minY
-        targetDepth = 0.2f + rng.nextFloat() * 0.8f
+        targetDepth = pickDepth(rng)
+    }
+
+    /**
+     * Bias waypoints toward the far and near glass. The occasional middle depth
+     * keeps it from looking like fish only inhabit two flat planes.
+     */
+    private fun pickDepth(rng: Random): Float {
+        if (rng.nextFloat() >= 0.65f) return 0.2f + rng.nextFloat() * 0.8f
+        return if (rng.nextBoolean()) {
+            0.08f + rng.nextFloat() * 0.27f
+        } else {
+            0.70f + rng.nextFloat() * 0.30f
+        }
     }
 
     private fun clampX(value: Float): Float =
@@ -227,6 +267,10 @@ class Fish(
         targetX = clampX(targetX)
         y = clampY(y)
         targetY = clampY(targetY)
+    }
+
+    private companion object {
+        const val SUPERSAMPLE = 2f
     }
 
     private fun normalise(src: Bitmap, mirror: Boolean, targetHeight: Int, maxWidth: Int): Bitmap {
@@ -257,7 +301,7 @@ class Fish(
         val scale = min(scaleForHeight, scaleForWidth)
         val targetWidth = max(1, (result.width * scale).roundToInt())
         val targetHeightPx = max(1, (result.height * scale).roundToInt())
-        result = Bitmap.createScaledBitmap(result, targetWidth, targetHeightPx, false)
+        result = Bitmap.createScaledBitmap(result, targetWidth, targetHeightPx, true)
         if (mirror) {
             val m = Matrix().apply { setScale(-1f, 1f) }
             result = Bitmap.createBitmap(result, 0, 0, result.width, result.height, m, false)

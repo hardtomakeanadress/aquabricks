@@ -24,6 +24,39 @@ class BrickRendererTest {
     }
 
     @Test
+    fun adjacentBricksHaveThinDarkJoints() {
+        val red = ArgbImage.argb(255, 201, 26, 9)
+        val horizontal = BrickRenderer.render(ArgbImage(2, 1, intArrayOf(red, red)))
+        val jointX = horizontal.width / 2 - 1
+        val midY = horizontal.height / 2
+        val joint = horizontal.pixels[midY * horizontal.width + jointX]
+        val face = horizontal.pixels[midY * horizontal.width + jointX - 4]
+        assertTrue("horizontal brick joint is not dark: ${colourSum(joint)}", colourSum(joint) < 120)
+        assertTrue("brick face was darkened too much: ${colourSum(face)}", colourSum(face) > 200)
+
+        val vertical = BrickRenderer.render(ArgbImage(1, 2, intArrayOf(red, red)))
+        val jointY = vertical.height / 2 - 1
+        val midX = vertical.width / 2
+        val horizontalJoint = vertical.pixels[jointY * vertical.width + midX]
+        assertTrue("vertical brick joint is not dark: ${colourSum(horizontalJoint)}", colourSum(horizontalJoint) < 120)
+    }
+
+    @Test
+    fun silhouetteBricksAlsoHaveDarkJoints() {
+        val width = 120
+        val height = 60
+        val fill = ArgbImage.argb(255, 232, 232, 228)
+        val source = ArgbImage(width, height, IntArray(width * height) { fill })
+        val sprite = BrickRenderer.renderSilhouette(source, columns = 4, rows = 2)
+        // 4 columns over 120 px puts the first shared edge at x=29.
+        val joint = sprite.pixels[30 * width + 29]
+        assertTrue("silhouette brick joint is not dark: ${colourSum(joint)}", colourSum(joint) < 120)
+    }
+
+    private fun colourSum(color: Int): Int =
+        ArgbImage.red(color) + ArgbImage.green(color) + ArgbImage.blue(color)
+
+    @Test
     fun silhouetteFallbackKeepsSmallTabsAndAddsStuds() {
         val width = 120
         val height = 60

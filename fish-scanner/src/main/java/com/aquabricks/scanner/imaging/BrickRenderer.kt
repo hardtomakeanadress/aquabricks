@@ -109,6 +109,13 @@ object BrickRenderer {
                 )
             }
         }
+        drawBrickJoints(
+            pixels, width, height, cols, rowCount,
+            cellWidth, cellHeight
+        ) { cx, cy ->
+            val index = cy * cols + cx
+            counts[index] * 4 >= cellArea && colours[index] != 0
+        }
         for (index in pixels.indices) {
             if (!mask[index]) pixels[index] = 0
         }
@@ -221,7 +228,44 @@ object BrickRenderer {
                 )
             }
         }
+        drawBrickJoints(
+            pixels, width, height, cols, rows,
+            cellSize.toFloat(), cellSize.toFloat()
+        ) { cx, cy -> ArgbImage.alpha(cells.pixels[cy * cols + cx]) > 0 }
         return ArgbImage(width, height, pixels)
+    }
+
+    /**
+     * A one-pixel dark joint along every shared edge makes the sprite read as a
+     * LEGO build even after the TV scales it down. Outer edges keep their bevel.
+     */
+    private fun drawBrickJoints(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        columns: Int,
+        rows: Int,
+        cellWidth: Float,
+        cellHeight: Float,
+        occupied: (Int, Int) -> Boolean
+    ) {
+        for (cy in 0 until rows) {
+            for (cx in 0 until columns) {
+                if (!occupied(cx, cy)) continue
+                if (cx + 1 < columns && occupied(cx + 1, cy)) {
+                    val x = (((cx + 1) * cellWidth).toInt() - 1).coerceIn(0, width - 1)
+                    val top = (cy * cellHeight).toInt().coerceIn(0, height - 1)
+                    val bottom = ((cy + 1) * cellHeight).toInt().coerceIn(0, height)
+                    for (y in top until bottom) pixels[y * width + x] = BRICK_JOINT
+                }
+                if (cy + 1 < rows && occupied(cx, cy + 1)) {
+                    val y = (((cy + 1) * cellHeight).toInt() - 1).coerceIn(0, height - 1)
+                    val left = (cx * cellWidth).toInt().coerceIn(0, width - 1)
+                    val right = ((cx + 1) * cellWidth).toInt().coerceIn(0, width)
+                    for (x in left until right) pixels[y * width + x] = BRICK_JOINT
+                }
+            }
+        }
     }
 
     private fun drawStud(
@@ -291,4 +335,6 @@ object BrickRenderer {
             (ArgbImage.blue(color) * factor).roundToInt().coerceIn(0, 255)
         )
     }
+
+    private const val BRICK_JOINT = 0xFF101417.toInt()
 }

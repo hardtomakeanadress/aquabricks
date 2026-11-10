@@ -161,6 +161,38 @@ class FishTest {
     }
 
     @Test
+    fun fishSwimBetweenTheNearAndFarGlass() {
+        val fish = Fish(
+            meta = FishMeta("depth-explorer", "Nemo", "", "right", 1L, 120, 60),
+            bitmap = sprite(),
+            width = 640f,
+            height = 360f,
+            sandY = 302f,
+            rng = Random(101)
+        )
+        val rng = Random(102)
+        var nearest = fish.depth
+        var farthest = fish.depth
+        var smallest = fish.drawHeight
+        var largest = fish.drawHeight
+        repeat(12_000) {
+            fish.update(1f / 30f, null, rng)
+            nearest = maxOf(nearest, fish.depth)
+            farthest = minOf(farthest, fish.depth)
+            smallest = minOf(smallest, fish.drawHeight)
+            largest = maxOf(largest, fish.drawHeight)
+        }
+        assertTrue(
+            "fish stayed on one depth plane: depth ${farthest}..${nearest}",
+            nearest - farthest > 0.45f
+        )
+        assertTrue(
+            "apparent size did not change with depth: $smallest..$largest",
+            largest > smallest * 1.35f
+        )
+    }
+
+    @Test
     fun depthChangesApparentSizeWithoutBreakingBounds() {
         val fish = Fish(
             meta = FishMeta("deep", "Nemo", "", "right", 1L, 120, 60),
@@ -261,7 +293,7 @@ class FishTest {
             rng = Random(31)
         )
 
-        assertTrue("thin sprite must be capped to the tank width", fish.drawWidth <= 512f * 0.38f + 1f)
+        assertTrue("thin sprite must be capped to the tank width", fish.drawWidth <= 512f * 0.30f + 1f)
         assertTrue("thin sprite should stay proportionate", fish.drawWidth > fish.drawHeight * 10f)
         val rng = Random(32)
         repeat(5_000) {

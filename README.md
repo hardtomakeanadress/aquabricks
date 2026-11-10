@@ -8,7 +8,7 @@ turns flat LEGO fish built by kids into swimming sprites.
 ┌──────────────────────┐   LAN HTTP   ┌─────────────────────────────┐
 │ AquaBricks Scanner   │ ───────────► │ AquaBricks Aquarium         │
 │                      │  PNG + name  │                             │
-│ CameraX photo        │              │ 512x288 pixel-art renderer  │
+│ CameraX photo        │              │ 640x360 pixel-art renderer  │
 │ 4-corner crop        │              │ fish + decor + bubbles/food │
 │ background cutout    │              │ remembers every fish        │
 │ LEGO-stud pixel grid │              │ http://TV_IP:8765           │
@@ -51,9 +51,10 @@ dist/            copied APKs after a build
    perceptual CIELAB match. The **Match LEGO colours** checkbox can be turned off
    for unusual/custom bricks.
 6. **Brick sprite** – the sprite is repainted as LEGO pieces: each occupied cell gets
-   a flat brick face, a bevelled outline and a raised round stud. In the default
-   brick modes the tank never receives a cropped patch of the original photo
-   texture; **Natural** intentionally sends the cutout photo instead.
+   a flat brick face, a bevelled outline, a raised round stud and a thin dark joint
+   where it meets the next brick. In the default brick modes the tank never receives
+   a cropped patch of the original photo texture; **Natural** intentionally sends
+   the cutout photo instead.
 7. **Faces** – premade pixel-art eyes (round, happy, angry, sleepy) and mouths
    (smile, grin, frown, open) can be selected and dragged onto the fish. They are
    boldly scaled for the TV, so eyes and mouths stay readable instead of becoming
@@ -69,7 +70,8 @@ dist/            copied APKs after a build
 - Four selectable aquascapes, each with its own water and sand palette, hardscape
   and plant mix: **Coral Reef**, **Kelp Forest**, **Sunken Wreck** and
   **Riverbed**. Press **LEFT/RIGHT** (or **T**) on the TV remote to cycle; the
-  choice is remembered across launches.
+  current landscape and the **PRESS LEFT / RIGHT** hint are shown in the top-left
+  corner, and the choice is remembered across launches.
 - Pixel-art decor includes tall swaying kelp, feathery ferns, broad-leaf anubias,
   sea grass, a red branching coral, sea fan, tube sponges, brain coral, urchin,
   anemone, a castle, a broken shipwreck, chest, rocks, starfish, shells, drifting
@@ -85,8 +87,10 @@ dist/            copied APKs after a build
   both halves and the full water column. Occasional bursts, depth scaling and
   shadows remain.
 - Fish also move through a depth axis: they swim toward and away from the glass,
-  shrinking, fading slightly and sitting higher when farther away. Far fish are
-  drawn first and near fish last.
+  shrinking, fading slightly and sitting noticeably higher when farther away.
+  Waypoints deliberately visit both the near and far glass, so front-to-back
+  swimming is visible rather than just left/right motion. Far fish are drawn first
+  and near fish last.
 - The fish are deliberately small enough for two or three to share the tank, and
   each one has its name in a small label underneath. New arrivals still get a
   bubble burst and a name plaque.
@@ -204,21 +208,23 @@ home-LAN toy. Do not expose port 8765/8766 to the internet.
 
 The Chromecast HD has 1.5 GB of RAM and a modest SoC, so the tank:
 
-- renders at 512×288 and lets the GPU upscale with nearest-neighbour filtering
-  (chunky pixels are the intended look),
+- renders at 640×360 and lets the GPU upscale with bilinear filtering, so scanned
+  fish stay readable instead of showing a field of hard pixel blocks,
 - pre-renders the static aquascape and vignette into one bitmap, then composites
   animated plant layers from two transparent overlays redrawn at 15 fps,
-- draws fish sprites pre-scaled to their on-screen size, uses `drawBitmapMesh`
-  for the tail/body wave, and uses a hardware surface canvas for the upscale,
-- caps each fish at 38% of the tank width, so even a very long, thin scan fits
-  without invalidating its swim bounds; unreadable sprites are skipped,
+- draws fish sprites at a 2× texture supersample, uses `drawBitmapMesh` for the
+  tail/body wave, and uses a hardware surface canvas for the filtered upscale,
+- caps each fish at 30% of the tank width and 13% of the tank height, so even a
+  very long, thin scan fits without invalidating its swim bounds; unreadable
+  sprites are skipped,
 - uses 30 fps and caps the tank at 64 fish,
 - ships with no AndroidX/Compose runtime and no image-loading libraries.
 
-Measured on the Chromecast HD: the TV APK is about **926 KB**, the running process
-uses about **61–64 MB PSS** (8.4 MB Java heap, 7.9 MB native, 3.8 MB GL), and the
-render thread uses roughly **46% of one core** with one fish at 30 fps (about 12%
-of the four-core CPU). Before static scenery and pre-scaled sprites it was around 75%.
+Measured on the Chromecast HD: the TV APK is about **928 KB**, the running process
+uses about **70 MB PSS** (8.1 MB Java heap, 7.9 MB native, 4.4 MB graphics), and
+the render thread uses roughly **65% of one core** with one fish at 30 fps (about
+16% of the four-core CPU). The 640×360 buffer costs more than the old 512×288
+frame but keeps scanned fish legible.
 
 ## Testing
 

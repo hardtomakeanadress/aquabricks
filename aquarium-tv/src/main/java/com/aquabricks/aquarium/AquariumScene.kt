@@ -51,6 +51,9 @@ class AquariumScene(
     val currentTheme: AquariumTheme get() = theme
 
     private val sandY = height * 0.84f
+    // UI is authored against the original 512x288 design and scaled with the
+    // render buffer so labels stay readable at the higher scene resolution.
+    private val uiScale = height / 288f
     private var time = 0f
     private var sceneAge = 0f
 
@@ -72,7 +75,7 @@ class AquariumScene(
     private val plantInterval = 1f / 15f
 
     private val bitmapPaint = Paint().apply {
-        isFilterBitmap = false
+        isFilterBitmap = true
         isAntiAlias = false
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -109,9 +112,9 @@ class AquariumScene(
     private val namePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
-        textSize = 7f
+        textSize = 7f * uiScale
         color = 0xCCFFF4D6.toInt()
-        setShadowLayer(2f, 0f, 1f, 0xCC081A22.toInt())
+        setShadowLayer(2f * uiScale, 0f, 1f * uiScale, 0xCC081A22.toInt())
     }
     private val fishMesh = FloatArray((FISH_MESH_COLS + 1) * (FISH_MESH_ROWS + 1) * 2)
     private val kelpPath = Path()
@@ -327,12 +330,13 @@ class AquariumScene(
         val dw = bmp.width * scale
         val dh = f.drawHeight
         val bob = sin(time * 1.35f + f.phase) * 0.8f
-        // Fish farther from the glass sit slightly higher and smaller, like the
-        // receding water column.
-        val depthLift = (1f - f.depth) * height * 0.06f
+        // Fish farther from the glass sit noticeably higher and smaller, like the
+        // receding water column. Stronger lift/size/alpha cues make front-to-back
+        // swimming readable on a TV, not just left/right motion.
+        val depthLift = (1f - f.depth) * height * 0.10f
         val drawY = f.y - depthLift + bob
 
-        val shadowAlpha = (24f + f.depth * 16f).toInt().coerceIn(24, 40)
+        val shadowAlpha = (18f + f.depth * 32f).toInt().coerceIn(18, 50)
         shadowPaint.color = shadowAlpha shl 24
         val shadowTurn = max(0.25f, abs(f.turnScaleX))
         canvas.drawOval(
@@ -381,7 +385,7 @@ class AquariumScene(
                 fishMesh[vertex++] = -dh / 2f + v * dh + dy
             }
         }
-        bitmapPaint.alpha = (200 + (f.depth * 55f)).toInt().coerceIn(200, 255)
+        bitmapPaint.alpha = (150 + (f.depth * 105f)).toInt().coerceIn(150, 255)
         canvas.drawBitmapMesh(
             bmp,
             FISH_MESH_COLS,
@@ -401,19 +405,20 @@ class AquariumScene(
             val name = f.meta.name.trim().uppercase()
             if (name.isBlank()) continue
             val label = if (name.length > 18) name.take(18) else name
-            val x = f.x.coerceIn(20f, width - 20f)
-            val depthLift = (1f - f.depth) * height * 0.06f
-            val baseline = (f.y - depthLift + f.drawHeight * 0.5f + 9f)
-                .coerceIn(12f, height - 4f)
+            val margin = 20f * uiScale
+            val x = f.x.coerceIn(margin, width - margin)
+            val depthLift = (1f - f.depth) * height * 0.10f
+            val baseline = (f.y - depthLift + f.drawHeight * 0.5f + 9f * uiScale)
+                .coerceIn(12f * uiScale, height - 4f * uiScale)
             val textWidth = namePaint.measureText(label)
             panelPaint.color = 0x99081A22.toInt()
             canvas.drawRoundRect(
-                x - textWidth * 0.5f - 4f,
-                baseline - 7f,
-                x + textWidth * 0.5f + 4f,
-                baseline + 2f,
-                3f,
-                3f,
+                x - textWidth * 0.5f - 4f * uiScale,
+                baseline - 7f * uiScale,
+                x + textWidth * 0.5f + 4f * uiScale,
+                baseline + 2f * uiScale,
+                3f * uiScale,
+                3f * uiScale,
                 panelPaint
             )
             canvas.drawText(label, x, baseline, namePaint)
@@ -1626,62 +1631,98 @@ class AquariumScene(
             )
         }
 
-        labelPaint.textSize = 7.5f
+        labelPaint.textSize = 7.5f * uiScale
         labelPaint.color = 0x88FFF4D6.toInt()
         labelPaint.textAlign = Paint.Align.LEFT
         val countText = if (fish.size == 1) "1 FISH" else "${fish.size} FISH"
-        canvas.drawText(countText, 11f, height - 7f, labelPaint)
+        canvas.drawText(countText, 11f * uiScale, height - 7f * uiScale, labelPaint)
 
         if (serverRunning && serverIp != "0.0.0.0") {
             labelPaint.textAlign = Paint.Align.RIGHT
             labelPaint.color = 0x66FFF4D6.toInt()
-            canvas.drawText("$serverIp:$serverPort", width - 11f, height - 7f, labelPaint)
+            canvas.drawText(
+                "$serverIp:$serverPort",
+                width - 11f * uiScale,
+                height - 7f * uiScale,
+                labelPaint
+            )
         }
 
         if (sceneAge < 16f && fish.isNotEmpty()) {
-            val alpha = (((16f - sceneAge) / 4f).coerceAtMost(1f) * 0.55f * 255).toInt()
+            val alpha = (((16f - sceneAge) / 4f).coerceAtMost(1f) * 0.62f * 255).toInt()
             labelPaint.textAlign = Paint.Align.CENTER
             labelPaint.color = Color.argb(alpha, 255, 244, 214)
-            canvas.drawText("PRESS OK TO FEED", width / 2f, height - 7f, labelPaint)
+            canvas.drawText(
+                "OK: FEED     LEFT / RIGHT: LANDSCAPE",
+                width / 2f,
+                height - 7f * uiScale,
+                labelPaint
+            )
         }
         if (feedFlash > 0f) {
             val alpha = (feedFlash / 1.4f * 180).toInt()
             labelPaint.textAlign = Paint.Align.CENTER
             labelPaint.color = Color.argb(alpha, 255, 209, 102)
-            labelPaint.textSize = 10f
+            labelPaint.textSize = 10f * uiScale
             canvas.drawText("YUM!", width / 2f, height * 0.2f, labelPaint)
         }
-        labelPaint.textSize = 7f
+        labelPaint.textSize = 8.5f * uiScale
         labelPaint.textAlign = Paint.Align.LEFT
-        labelPaint.color = 0xBBFFF4D6.toInt()
-        val themeLabel = "THEME: ${currentTheme.displayName}   LEFT/RIGHT"
-        val themeWidth = labelPaint.measureText(themeLabel)
-        panelPaint.color = 0x66081A22
-        canvas.drawRoundRect(8f, 4f, themeWidth + 16f, 19f, 4f, 4f, panelPaint)
-        canvas.drawText(themeLabel, 12f, 15f, labelPaint)
+        labelPaint.color = 0xCCFFF4D6.toInt()
+        val themeLabel = "LANDSCAPE: ${currentTheme.displayName}"
+        val changeHint = "   PRESS LEFT / RIGHT"
+        val themeWidth = labelPaint.measureText(themeLabel + changeHint)
+        val panelLeft = 8f * uiScale
+        val panelTop = 4f * uiScale
+        panelPaint.color = 0x99081A22.toInt()
+        canvas.drawRoundRect(
+            panelLeft,
+            panelTop,
+            panelLeft + themeWidth + 16f * uiScale,
+            panelTop + 20f * uiScale,
+            4f * uiScale,
+            4f * uiScale,
+            panelPaint
+        )
+        val textX = 12f * uiScale
+        val textY = 17f * uiScale
+        canvas.drawText(themeLabel, textX, textY, labelPaint)
+        labelPaint.color = 0xFFFFD166.toInt()
+        canvas.drawText(changeHint, textX + labelPaint.measureText(themeLabel), textY, labelPaint)
     }
 
     private fun drawPlaque(canvas: Canvas, title: String, line1: String, line2: String, accent: Int) {
-        val boxWidth = 468f
-        val boxHeight = if (line2.isBlank()) 84f else 94f
+        val boxWidth = 468f * uiScale
+        val boxHeight = (if (line2.isBlank()) 84f else 94f) * uiScale
         val left = (width - boxWidth) / 2f
         val top = height * 0.34f
         panelPaint.color = 0xD90E2A36.toInt()
-        canvas.drawRoundRect(left, top, left + boxWidth, top + boxHeight, 12f, 12f, panelPaint)
+        canvas.drawRoundRect(
+            left, top, left + boxWidth, top + boxHeight,
+            12f * uiScale, 12f * uiScale, panelPaint
+        )
         panelBorder.color = 0xAAFFD166.toInt()
-        panelBorder.strokeWidth = 1.5f
-        canvas.drawRoundRect(left, top, left + boxWidth, top + boxHeight, 12f, 12f, panelBorder)
+        panelBorder.strokeWidth = 1.5f * uiScale
+        canvas.drawRoundRect(
+            left, top, left + boxWidth, top + boxHeight,
+            12f * uiScale, 12f * uiScale, panelBorder
+        )
 
         titlePaint.color = accent
-        titlePaint.textSize = 17f
-        canvas.drawText(title, width / 2f, top + 27f, titlePaint)
+        titlePaint.textSize = 17f * uiScale
+        canvas.drawText(title, width / 2f, top + 27f * uiScale, titlePaint)
         bodyPaint.color = 0xFFFFF4D6.toInt()
-        bodyPaint.textSize = 8f
-        if (line1.isNotBlank()) canvas.drawText(line1, width / 2f, top + 48f, bodyPaint)
-        if (line2.isNotBlank()) canvas.drawText(line2, width / 2f, top + 64f, bodyPaint)
-        bodyPaint.textSize = 7f
+        bodyPaint.textSize = 8f * uiScale
+        if (line1.isNotBlank()) canvas.drawText(line1, width / 2f, top + 48f * uiScale, bodyPaint)
+        if (line2.isNotBlank()) canvas.drawText(line2, width / 2f, top + 64f * uiScale, bodyPaint)
+        bodyPaint.textSize = 7f * uiScale
         bodyPaint.color = 0x88FFF4D6.toInt()
-        canvas.drawText("AQUABRICKS", width / 2f, top + boxHeight - 10f, bodyPaint)
+        canvas.drawText(
+            "AQUABRICKS",
+            width / 2f,
+            top + boxHeight - 10f * uiScale,
+            bodyPaint
+        )
     }
 
     private fun nextBanner() {
@@ -1695,21 +1736,27 @@ class AquariumScene(
         val easeOut = ((4.8f - bannerAge) / 0.5f).coerceIn(0f, 1f)
         val alpha = (min(easeIn, easeOut) * 235).toInt()
         if (alpha <= 0) return
-        val boxWidth = 380f
-        val boxHeight = 54f
+        val boxWidth = 380f * uiScale
+        val boxHeight = 54f * uiScale
         val left = (width - boxWidth) / 2f
-        val top = 22f - (1f - easeIn) * 10f
+        val top = 22f * uiScale - (1f - easeIn) * 10f * uiScale
         panelPaint.color = Color.argb((alpha * 0.9f).toInt(), 14, 42, 54)
-        canvas.drawRoundRect(left, top, left + boxWidth, top + boxHeight, 11f, 11f, panelPaint)
+        canvas.drawRoundRect(
+            left, top, left + boxWidth, top + boxHeight,
+            11f * uiScale, 11f * uiScale, panelPaint
+        )
         panelBorder.color = Color.argb(alpha, 255, 209, 102)
-        panelBorder.strokeWidth = 1.5f
-        canvas.drawRoundRect(left, top, left + boxWidth, top + boxHeight, 11f, 11f, panelBorder)
+        panelBorder.strokeWidth = 1.5f * uiScale
+        canvas.drawRoundRect(
+            left, top, left + boxWidth, top + boxHeight,
+            11f * uiScale, 11f * uiScale, panelBorder
+        )
         titlePaint.color = Color.argb(alpha, 255, 209, 102)
-        titlePaint.textSize = 13f
-        canvas.drawText(current.title, width / 2f, top + 24f, titlePaint)
+        titlePaint.textSize = 13f * uiScale
+        canvas.drawText(current.title, width / 2f, top + 24f * uiScale, titlePaint)
         bodyPaint.color = Color.argb((alpha * 0.85f).toInt(), 255, 244, 214)
-        bodyPaint.textSize = 7.5f
-        canvas.drawText(current.subtitle, width / 2f, top + 40f, bodyPaint)
+        bodyPaint.textSize = 7.5f * uiScale
+        canvas.drawText(current.subtitle, width / 2f, top + 40f * uiScale, bodyPaint)
     }
 
     // --------------------------------------------------------------- effects

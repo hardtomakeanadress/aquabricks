@@ -11,7 +11,7 @@ a JDK and the Android SDK; instrumented tests need an Android device or emulator
 |------|----------------|
 | `HttpRequestReaderTest` | request line/query parsing, case-insensitive headers, exact binary bodies, truncated bodies, oversized bodies, expired request deadline, malformed traffic |
 | `FishRepositoryTest` | fish survive a repository restart, overlapping repository instances cannot overwrite each other, JSON persistence, name sanitisation, 64-fish cap, corrupt index recovery, missing-PNG recovery, delete semantics |
-| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and multiple fish do not beat in lockstep; whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves and the full water column; depth changes apparent size without escaping the tank |
+| `FishTest` | 20,000 simulation steps stay inside the tank; a hungry fish reaches food; a 600×40 scan is width-capped at 512×288; tail beat stays speed-matched, integrates its current rate without uptime phase jumps, and multiple fish do not beat in lockstep; whole-body pitch changes smoothly; direction changes ease through an edge-on turn instead of mirroring instantly; fish visit both halves, the full water column, and both the near and far depth planes; depth changes apparent size without escaping the tank |
 | `AquariumSceneTest` (Robolectric, native Skia) | the real scene renders a non-black, colourful frame; a fish changes the frame; 2.5 s of updates changes it again; food sinks, expires and feeding recovers; theme switching rebuilds a different layout without losing fish and reverse cycling wraps; a fully transparent sprite is skipped without crashing; debug PNGs are written |
 | `FishServerRobolectricTest` | real HTTP server + PNG decoding + callbacks + JSON listing + delete; non-PNG rejection; UDP discovery beacon reply |
 
@@ -23,7 +23,7 @@ a JDK and the Android SDK; instrumented tests need an Android device or emulator
 | `GridAndColourTest` | detects a known stud pitch/count, samples flat brick faces rather than stud highlights/gaps, snaps a 2×2 brick to one LEGO colour, palette-off preserves an off-palette colour, sRGB gamma 2.4 picks the correct palette entry, reconciles silhouette pitches, samples at a detected lattice origin |
 | `SamplePhotoTest` | a realistic synthetic photo (textured baseplate, studs, shadows, noise, tilted camera) becomes a transparent auto-grid sprite; auto stud count is correct and the cream eye survives |
 | `WhitePaperScanTest` | a real red-fish-on-white-paper scan keeps a plausible 2D stud grid instead of collapsing to one row; paper shadow is removed while the grey brick core survives at low and high cutout settings; output is rebuilt as LEGO bricks |
-| `BrickRendererTest` | detected cells become a studded, bevelled brick surface; smooth-shape fallback keeps small tabs while adding studs |
+| `BrickRendererTest` | detected cells become a studded, bevelled brick surface with thin dark joints between adjacent bricks; smooth-shape fallback keeps small tabs while adding studs and joints |
 | `CropQuadViewTest` | dragging a crop corner draws the magnifier loupe (real Skia rendering) and cannot make the crop concave |
 | `FaceDialogTest` | changing the eye model keeps a position already dragged in the editor |
 | `EditActivityTest` | changing the colour mode disables Send immediately, closing the debounce window for sending the previous sprite |
@@ -153,7 +153,7 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
 
 ## Current verification status (2026-11-10)
 
-- **80 JVM/Robolectric tests, 0 failures** — 36 in `aquarium-tv`, 44 in `fish-scanner`.
+- **83 JVM/Robolectric tests, 0 failures** — 37 in `aquarium-tv`, 46 in `fish-scanner`.
 - **8 instrumented tests, 0 failures** — 2 tank tests and 6 scanner tests, run on both
   a **Pixel 7 (Android 16 / API 37)** and the **Chromecast HD (Android 14 / API 34)**.
   The tank suite was re-run on the Chromecast after the sizing fix: 2/2 passed. They
@@ -168,10 +168,11 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
   phone and the TV, screenshotted, then the app was force-stopped and relaunched; the
   fish persisted. `scripts/phone_e2e.sh` automates this for a phone.
 - **Chromecast performance:** with static scenery baked, animated plants cached in
-  two 15 fps overlays and fish sprites pre-scaled, the render thread uses about
-  **46% of one core** at 512×288 / 30 fps with one fish (down from ~75%). The TV APK
-  is about **926 KB** and the process uses about **61–64 MB PSS** (8.4 MB Java heap,
-  7.9 MB native, 3.8 MB GL). The tank is installed and running.
+  two 15 fps overlays and fish sprites pre-scaled with a 2× texture supersample,
+  the render thread uses about **65% of one core** at 640×360 / 30 fps with one
+  fish. The TV APK is about **928 KB** and the process uses about **70 MB PSS**
+  (8.1 MB Java heap, 7.9 MB native, 4.4 MB graphics). The tank is installed and
+  running.
 
 The scanner tests also found two real bugs that pure image maths missed: Espresso 3.5
 could not run on Android 16 (the smoke test now uses plain `ActivityScenario`), and
