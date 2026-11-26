@@ -4,33 +4,34 @@
 # Enable on the TV first:
 #   Settings -> System -> About -> "Android TV OS build" (select 7 times)
 #   Settings -> System -> Developer options -> Wireless debugging
-#   Pair: adb pair 192.168.0.178:<pairPort> <six-digit code>
-#   Then: adb mdns services, adb connect 192.168.0.178:<debugPort>
+#   Pair: adb pair 192.0.2.10:<pairPort> <six-digit code>
+#   Then: adb mdns services, adb connect 192.0.2.10:<debugPort>
 #
 # Then:
 #   TV_SERIAL=<full serial or host:port> ./scripts/install_tv.sh
-# (TV_IP + legacy port 5555 is still tried when TV_SERIAL is omitted.)
+# For legacy ADB, supply the TV's IP address in TV_IP.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
-TV_IP="${TV_IP:-192.168.0.178}"
+TV_IP="${TV_IP:-}"
 TV_SERIAL="${TV_SERIAL:-${ANDROID_SERIAL:-}}"
 APK="$ROOT/aquarium-tv/build/outputs/apk/debug/aquarium-tv-debug.apk"
 
-if [[ ! -f "$APK" ]]; then
-    echo "APK not built yet. Building..."
-    "$GRADLE" --console=plain :aquarium-tv:assembleDebug
-fi
-
-if [[ -z "$TV_SERIAL" ]]; then
+if [[ -z "$TV_SERIAL" && -n "$TV_IP" ]]; then
     echo "==> Trying legacy ADB on $TV_IP:5555"
-    "$ADB" connect "$TV_IP:5555" || true
-    TV_SERIAL=$("$ADB" devices | awk 'NR>1 && $2=="device" {print $1; exit}')
+    if "$ADB" connect "$TV_IP:5555" && [[ "$("$ADB" -s "$TV_IP:5555" get-state)" == device ]]; then
+        TV_SERIAL="$TV_IP:5555"
+    fi
 fi
 if [[ -z "$TV_SERIAL" ]]; then
     echo "No TV found. On current Chromecast HD firmware enable Wireless debugging," >&2
     echo "pair with 'adb pair', then re-run with TV_SERIAL=<serial from adb devices>." >&2
     exit 1
+fi
+
+if [[ ! -f "$APK" ]]; then
+    echo "APK not built yet. Building..."
+    "$GRADLE" --console=plain :aquarium-tv:assembleDebug
 fi
 
 echo "==> Installing on $TV_SERIAL"

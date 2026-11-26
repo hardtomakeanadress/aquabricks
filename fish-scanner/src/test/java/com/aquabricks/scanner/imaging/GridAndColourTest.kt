@@ -10,7 +10,7 @@ import kotlin.math.roundToInt
 /**
  * Verifies that the auto grid locks onto the real stud pitch (so brick counts and
  * sizes survive) and that cell colours come from the flat brick face and snap to
- * the LEGO palette rather than averaging in stud highlights or gaps.
+ * the brick palette rather than averaging in stud highlights or gaps.
  */
 class GridAndColourTest {
 
@@ -49,7 +49,7 @@ class GridAndColourTest {
                 }
             }
         )
-        val result = FishImageProcessor.resampleGrid(image, 4, 3, snapLegoColours = true)
+        val result = FishImageProcessor.resampleGrid(image, 4, 3, snapBrickColours = true)
         assertEquals(4, result.width)
         assertEquals(3, result.height)
         assertColour(blue, result, 1, 0)
@@ -91,7 +91,7 @@ class GridAndColourTest {
             originX = 10f,
             originY = 10f
         )
-        val grid = FishImageProcessor.resampleGrid(image, estimate, snapLegoColours = false)
+        val grid = FishImageProcessor.resampleGrid(image, estimate, snapBrickColours = false)
         assertEquals(4, grid.width)
         assertEquals(3, grid.height)
         assertEquals(red, grid.pixels[1 * grid.width + 1])
@@ -101,7 +101,7 @@ class GridAndColourTest {
     @Test
     fun turnsOffPaletteMatchingAndKeepsTheSampledColour() {
         val image = brickGrid(columns = 4, rows = 3, pitch = 40) { _, _ -> offPaletteTeal }
-        val result = FishImageProcessor.resampleGrid(image, 4, 3, snapLegoColours = false)
+        val result = FishImageProcessor.resampleGrid(image, 4, 3, snapBrickColours = false)
         assertEquals(4, result.width)
         assertEquals(3, result.height)
         assertColour(offPaletteTeal, result, 1, 1)
@@ -112,9 +112,9 @@ class GridAndColourTest {
         // If the nonlinear branch cubes instead of raising to 2.4, this teal picks
         // Dark Bluish Gray rather than Medium Azure.
         val image = brickGrid(columns = 4, rows = 3, pitch = 40) { _, _ -> offPaletteTeal }
-        val snapped = FishImageProcessor.resampleGrid(image, 4, 3, snapLegoColours = true)
+        val snapped = FishImageProcessor.resampleGrid(image, 4, 3, snapBrickColours = true)
         assertColour(mediumAzure, snapped, 1, 1)
-        val raw = FishImageProcessor.resampleGrid(image, 4, 3, snapLegoColours = false)
+        val raw = FishImageProcessor.resampleGrid(image, 4, 3, snapBrickColours = false)
         assertColour(offPaletteTeal, raw, 1, 1)
     }
 

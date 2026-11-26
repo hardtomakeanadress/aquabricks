@@ -36,7 +36,7 @@ class EditActivityTest {
         val intent = Intent().putExtra(EditActivity.EXTRA_PHOTO_PATH, photo.absolutePath)
         val activity = Robolectric.buildActivity(EditActivity::class.java, intent).setup().get()
         val send = activity.findViewById<Button>(R.id.sendButton)
-        val colourMode = activity.findViewById<CheckBox>(R.id.legoColourCheck)
+        val colourMode = activity.findViewById<CheckBox>(R.id.brickColourCheck)
         try {
             val deadline = System.currentTimeMillis() + 6_000
             while (!send.isEnabled && System.currentTimeMillis() < deadline) {

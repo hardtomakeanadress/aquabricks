@@ -22,7 +22,7 @@ class MainActivitySmokeTest {
                 val title = findText(decor, "AQUABRICKS")
                 assertNotNull("AQUABRICKS title not found", title)
                 assertTrue("title is not visible", title!!.isShown)
-                val subtitle = findText(decor, "LEGO FISH SCANNER")
+                val subtitle = findText(decor, "BRICK FISH SCANNER")
                 assertNotNull("subtitle not found", subtitle)
                 assertTrue("subtitle is not visible", subtitle!!.isShown)
                 val manage = findText(decor, "MANAGE FISH")

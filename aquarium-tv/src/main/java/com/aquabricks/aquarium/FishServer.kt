@@ -370,7 +370,7 @@ class FishServer(
             <h1>$tankName</h1>
             <p>${repository.count()} fish &middot; AquaBricks aquarium at <code>${localIp}:${httpPort}</code></p>
             <p>Open the <b>AquaBricks Scanner</b> app on a phone connected to the same Wi-Fi,
-               scan a LEGO fish, and tap <b>Send to tank</b>.</p>
+               scan a brick fish, and tap <b>Send to tank</b>.</p>
             <table><tr><th>Name</th><th>Made by</th><th>Size</th><th>Facing</th></tr>$fishRows</table>
             <p style="opacity:.6">POST a PNG to <code>/fish</code> with
                <code>X-Fish-Name</code>, <code>X-Fish-Creator</code>, <code>X-Fish-Facing</code>.</p>

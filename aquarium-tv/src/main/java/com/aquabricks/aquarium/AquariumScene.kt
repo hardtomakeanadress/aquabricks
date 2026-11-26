@@ -858,7 +858,7 @@ class AquariumScene(
         if (painted != null) {
             canvas.drawBitmap(painted, null, android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat()), bitmapPaint)
             // Keep the painted scene readable on a TV; the glass vignette also
-            // helps the LEGO fish stand out from the detailed background.
+            // helps the brick fish stand out from the detailed background.
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), vignettePaint)
             return
         }
@@ -2507,7 +2507,7 @@ class AquariumScene(
             drawPlaque(
                 canvas,
                 "THE TANK IS EMPTY",
-                "SCAN A LEGO FISH WITH THE PHONE APP",
+                "SCAN A BRICK FISH WITH THE PHONE APP",
                 "AND SEND IT OVER - $address",
                 0xFFFFD166.toInt()
             )

@@ -5,7 +5,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Turns detected stud cells into a clean LEGO-style sprite instead of copying the
+ * Turns detected stud cells into a clean brick-style sprite instead of copying the
  * photo texture. The silhouette comes from cell occupancy; every occupied cell is
  * painted as a brick face with a bevel and a round stud.
  */
@@ -14,7 +14,7 @@ object BrickRenderer {
     /**
      * Keeps the exact scanned silhouette (including small tails/fins) but replaces
      * the photo texture with quantised brick faces and raised studs. Used when the
-     * object is a smooth LEGO plate/tile with no visible stud pitch.
+     * object is a smooth brick plate/tile with no visible stud pitch.
      */
     fun renderSilhouette(
         source: ArgbImage,
@@ -237,7 +237,7 @@ object BrickRenderer {
 
     /**
      * A one-pixel dark joint along every shared edge makes the sprite read as a
-     * LEGO build even after the TV scales it down. Outer edges keep their bevel.
+     * brick build even after the TV scales it down. Outer edges keep their bevel.
      */
     private fun drawBrickJoints(
         pixels: IntArray,

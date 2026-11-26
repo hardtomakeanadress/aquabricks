@@ -1,7 +1,7 @@
 # AquaBricks
 
 A cosy pixel-art aquarium for a **Chromecast with Google TV** and a phone app that
-turns flat LEGO fish built by kids into swimming sprites.
+turns flat fish built from interlocking bricks into swimming sprites.
 
 ```
   phone                                 TV / Chromecast HD
@@ -11,7 +11,7 @@ turns flat LEGO fish built by kids into swimming sprites.
 │ CameraX photo        │              │ 640x360 pixel-art renderer  │
 │ 4-corner crop        │              │ fish + decor + bubbles/food │
 │ background cutout    │              │ remembers every fish        │
-│ LEGO-stud pixel grid │              │ http://TV_IP:8765           │
+│ Stud-based grid      │              │ http://TV_IP:8765           │
 └──────────────────────┘              └─────────────────────────────┘
 ```
 
@@ -37,7 +37,7 @@ dist/            copied APKs after a build
    crop line meets the fish. The crop is perspective-corrected.
 3. **Cutout** – the plain background is flood-filled away from the borders, locally
    following lighting gradients so textured baseplates and shadows disappear.
-4. **Auto stud grid** – the app detects the real LEGO stud pitch from the repeating
+4. **Auto stud grid** – the app detects the spacing between studs from the repeating
    stud/gap edges. Because the grid follows the physical bricks, a 2×4 brick stays a
    2×4 block and the overall stud count is preserved instead of being squeezed into
    an arbitrary 8/12/16/24 columns. A vertical pitch that disagrees with the
@@ -47,10 +47,9 @@ dist/            copied APKs after a build
    silhouette is kept and rebuilt as a two-stud-high brick mosaic instead of
    inventing a fine 40×40 grid. **Natural** keeps the full photo instead.
 5. **Brick colours** – each cell is sampled from the flat face around its stud (not
-   the highlight or the gaps) and snapped to the nearest LEGO colour using a
-   perceptual CIELAB match. The **Match LEGO colours** checkbox can be turned off
-   for unusual/custom bricks.
-6. **Brick sprite** – the sprite is repainted as LEGO pieces: each occupied cell gets
+   the highlight or the gaps) and matched to the nearest brick colour in CIELAB.
+   Turn off **Match brick colours** for unusual or custom bricks.
+6. **Brick sprite** – the image is redrawn as bricks. Each occupied cell gets
    a flat brick face, a bevelled outline, a raised round stud and a thin dark joint
    where it meets the next brick. In the default brick modes the tank never receives
    a cropped patch of the original photo texture; **Natural** intentionally sends
@@ -113,7 +112,7 @@ dist/            copied APKs after a build
   each one has its name in a small label underneath. New arrivals still get a
   bubble burst and a name plaque.
 - Brick colours are shown untouched: the fish are drawn after all water overlays, so
-  the scanned LEGO palette stays accurate on the TV.
+  the scanned brick colours stay accurate on the TV.
 - Press **OK / Enter / Space** (or tap the screen) to drop food. Pellets sink
   slowly and are taken at the fish's mouth, with a small bubble puff, rather than
   disappearing through the body.
@@ -151,15 +150,16 @@ The Chromecast HD is an Android TV device, so the tank is a normal sideloaded ap
 1. On the TV: **Settings → System → About → Android TV OS build**, press select 7×.
 2. Back in **Settings → System → Developer options**, enable **Wireless debugging**
    (current Chromecast HD firmware shows a pairing code and ports).
-3. Discover the pairing endpoint and pair from the build machine:
+3. Discover the pairing endpoint and pair from the build machine. Replace the
+   example IP address with your TV’s address:
 
 ```bash
 adb mdns services                    # note the _adb-tls-pairing port
-adb pair 192.168.0.178:<pairPort> <six-digit-code>
+adb pair 192.0.2.10:<pairPort> <six-digit-code>
 adb mdns services                    # note the _adb-tls-connect port
-adb connect 192.168.0.178:<debugPort>
-adb -s 192.168.0.178:<debugPort> install -r dist/aquarium-tv-debug.apk
-adb -s 192.168.0.178:<debugPort> shell monkey \
+adb connect 192.0.2.10:<debugPort>
+adb -s 192.0.2.10:<debugPort> install -r dist/aquarium-tv-debug.apk
+adb -s 192.0.2.10:<debugPort> shell monkey \
   -p com.aquabricks.aquarium -c android.intent.category.LEANBACK_LAUNCHER 1
 ```
 
@@ -193,13 +193,13 @@ This is the fastest smoke test before deploying to the TV:
 ## Using it
 
 1. Open the aquarium on the TV. Its address is shown bottom-right (for example
-   `192.168.0.178:8765`).
-2. Build a flat fish from LEGO bricks on a plain baseplate or sheet of paper.
+   `192.0.2.10:8765`).
+2. Build a flat fish from interlocking bricks on a plain baseplate or sheet of paper.
 3. Open **AquaBricks Scanner**; the home screen offers **SCAN A FISH** and
    **MANAGE FISH IN THE TANK**. Choose **SCAN A FISH**, put the fish in the
    viewfinder, and tap the shutter.
 4. Drag the four corners onto the edges of the fish.
-5. Pick a name, who made it and which way the head faces. The stud grid and LEGO
+5. Pick a name, who made it and which way the head faces. The stud grid and brick
    colours are detected automatically; the status line shows the detected grid,
    e.g. `AUTO GRID 14 x 8 STUDS`. Raise **Background cutout** only if baseplate
    remains around the fish.
@@ -278,5 +278,3 @@ commands are documented in [TESTING.md](TESTING.md). Quick JVM run:
   `adb install -r`.
 - **Port already in use** – the tank tries 8765–8775 automatically and reports the
   chosen port on screen.
-
-AquaBricks is a personal DIY project and is not affiliated with the LEGO Group.

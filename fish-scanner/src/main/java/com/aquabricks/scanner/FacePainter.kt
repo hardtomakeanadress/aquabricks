@@ -41,7 +41,7 @@ data class FaceConfig(
 
 /**
  * Draws a chosen eye and mouth directly into an ARGB sprite. Everything is chunky
- * pixel art so it sits naturally on a scanned LEGO mosaic; the head direction is
+ * pixel art so it sits naturally on a scanned brick mosaic; the head direction is
  * used to mirror asymmetric shapes such as an angry brow.
  */
 object FacePainter {

@@ -20,7 +20,7 @@ import java.io.FileOutputStream
 
 /**
  * End-to-end on-device test of the editor: decode a real JPEG, auto-crop, cut the
- * background out, resample the LEGO grid and enable the send button.
+ * background out, resample the stud grid and enable the send button.
  */
 @RunWith(AndroidJUnit4::class)
 class EditActivityPipelineTest {

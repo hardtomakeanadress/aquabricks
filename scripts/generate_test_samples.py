@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Creates a realistic synthetic photo of a flat LEGO fish on a baseplate.
+"""Creates a realistic synthetic photo of a flat brick fish on a baseplate.
 
 Used by the JVM tests in the scanner module, so the image pipeline is exercised
 against textured plastic, stud highlights, shadows, noise and a tilted camera.
@@ -120,7 +120,7 @@ def main():
     image = image.resize((960, 700), Image.LANCZOS)
 
     os.makedirs(OUT, exist_ok=True)
-    image.save(os.path.join(OUT, "lego-fish-photo.png"))
+    image.save(os.path.join(OUT, "brick-fish-photo.png"))
 
     # Raw little-endian ARGB for the JVM tests (Android unit tests cannot use
     # java.awt/javax.imageio on the Kotlin test classpath).
@@ -131,10 +131,10 @@ def main():
                                for r, g, b in image.getdata()))
     if sys.byteorder != "little":
         pixels.byteswap()
-    with open(os.path.join(OUT, "lego-fish-photo.bin"), "wb") as raw:
+    with open(os.path.join(OUT, "brick-fish-photo.bin"), "wb") as raw:
         raw.write(struct.pack("<II", image.width, image.height))
         pixels.tofile(raw)
-    print("Wrote lego-fish-photo.png and lego-fish-photo.bin")
+    print("Wrote brick-fish-photo.png and brick-fish-photo.bin")
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ class EditActivity : ComponentActivity() {
     private lateinit var toleranceSeek: SeekBar
     private lateinit var facingRow: LinearLayout
     private lateinit var gridRow: LinearLayout
-    private lateinit var legoColourCheck: CheckBox
+    private lateinit var brickColourCheck: CheckBox
 
     private val processor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "fish-processor").apply { isDaemon = true }
@@ -49,7 +49,7 @@ class EditActivity : ComponentActivity() {
     private var gridCols = -1
     private var tolerance = 14
     private var facingRight = true
-    private var snapLegoColours = true
+    private var snapBrickColours = true
     private var faceConfig: FaceConfig? = null
     private var userMovedCrop = false
     private var generation = 0
@@ -73,7 +73,7 @@ class EditActivity : ComponentActivity() {
         toleranceSeek = findViewById(R.id.toleranceSeek)
         facingRow = findViewById(R.id.facingRow)
         gridRow = findViewById(R.id.gridRow)
-        legoColourCheck = findViewById(R.id.legoColourCheck)
+        brickColourCheck = findViewById(R.id.brickColourCheck)
 
         previewImage.background = ImageUtils.checkerDrawable(this)
         sendButton.isEnabled = false
@@ -86,8 +86,8 @@ class EditActivity : ComponentActivity() {
         faceButton.setOnClickListener { editFace() }
 
         setUpChips()
-        legoColourCheck.setOnCheckedChangeListener { _, checked ->
-            snapLegoColours = checked
+        brickColourCheck.setOnCheckedChangeListener { _, checked ->
+            snapBrickColours = checked
             scheduleProcess(30)
         }
         toleranceSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -203,7 +203,7 @@ class EditActivity : ComponentActivity() {
         val options = FishImageProcessor.Options(
             tolerance = tolerance,
             gridCols = gridCols,
-            snapLegoColours = snapLegoColours
+            snapBrickColours = snapBrickColours
         )
         val requestGeneration = generation
         setProcessing(true)

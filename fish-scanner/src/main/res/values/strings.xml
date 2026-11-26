@@ -2,12 +2,12 @@
 <resources>
     <string name="app_name">AquaBricks Scanner</string>
     <string name="scan_title">AQUABRICKS</string>
-    <string name="scan_subtitle">LEGO FISH SCANNER</string>
+    <string name="scan_subtitle">BRICK FISH SCANNER</string>
     <string name="scan_hint">PLAIN BACKGROUND = CLEAN CUTOUT</string>
-    <string name="home_intro">TURN A FLAT LEGO FISH INTO A FISH THAT SWIMS IN THE LIVING ROOM AQUARIUM.</string>
+    <string name="home_intro">TURN A FLAT BRICK FISH INTO A FISH THAT SWIMS IN THE LIVING ROOM AQUARIUM.</string>
     <string name="home_intro_hint">Put the fish on plain paper, scan it, check the stud grid, then send it to the TV.</string>
     <string name="home_scan">SCAN A FISH</string>
-    <string name="home_scan_hint">OPEN THE CAMERA AND CAPTURE A FLAT LEGO FISH</string>
+    <string name="home_scan_hint">OPEN THE CAMERA AND CAPTURE A FLAT BRICK FISH</string>
     <string name="home_manage">MANAGE FISH IN THE TANK</string>
     <string name="home_manage_hint">LIST AND REMOVE FISH WITHOUT SCANNING ANYTHING</string>
     <string name="home_no_tank">NO TANK PAIRED YET</string>
@@ -18,11 +18,11 @@
     <string name="manage_no_tank">No tank found automatically. Open the aquarium on the TV and check that both devices are on the same Wi-Fi, or type its address.</string>
     <string name="manage_address_title">TANK ADDRESS</string>
     <string name="manage_connect">CONNECT</string>
-    <string name="manage_invalid_address">TYPE A TV ADDRESS LIKE 192.168.0.178:8765</string>
+    <string name="manage_invalid_address">TYPE A TV ADDRESS LIKE 192.0.2.10:8765</string>
     <string name="tap_to_scan">TAP TO SCAN</string>
-    <string name="capture">Capture LEGO fish</string>
+    <string name="capture">Capture brick fish</string>
     <string name="camera_needed">CAMERA NEEDED</string>
-    <string name="camera_explanation">AquaBricks uses the camera to turn a flat LEGO fish into a swimming sprite. Photos never leave your phone or local Wi-Fi.</string>
+    <string name="camera_explanation">AquaBricks uses the camera to turn a flat brick fish into a swimming sprite. Photos never leave your phone or local Wi-Fi.</string>
     <string name="grant_camera">ALLOW CAMERA</string>
     <string name="open_settings">OPEN SETTINGS</string>
     <string name="edit_title">MAKE IT SWIM</string>
@@ -34,10 +34,10 @@
     <string name="head_facing">HEAD FACING</string>
     <string name="head_left">LEFT</string>
     <string name="head_right">RIGHT</string>
-    <string name="pixel_grid">LEGO PIXEL GRID</string>
+    <string name="pixel_grid">BRICK PIXEL GRID</string>
     <string name="grid_auto">AUTO</string>
     <string name="grid_off">NATURAL</string>
-    <string name="lego_colours">MATCH LEGO COLOURS</string>
+    <string name="brick_colours">MATCH BRICK COLOURS</string>
     <string name="add_face">EYES &amp; MOUTH</string>
     <string name="face_title">GIVE IT A FACE</string>
     <string name="face_hint">DRAG THE EYE AND MOUTH ONTO THE FISH.</string>
@@ -53,7 +53,7 @@
     <string name="send_dialog_looking">LOOKING FOR YOUR AQUARIUM…</string>
     <string name="send_dialog_none">No tank found yet. Open the Aquarium app on the TV and make sure both devices are on the same Wi-Fi.</string>
     <string name="send_dialog_manual">OR TYPE THE TV ADDRESS</string>
-    <string name="send_manual_hint">192.168.0.178:8765</string>
+    <string name="send_manual_hint">192.0.2.10:8765</string>
     <string name="send">SEND</string>
     <string name="refresh">REFRESH</string>
     <string name="sending">SENDING YOUR FISH…</string>

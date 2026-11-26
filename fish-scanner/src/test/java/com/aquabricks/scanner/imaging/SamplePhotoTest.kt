@@ -46,7 +46,7 @@ class SamplePhotoTest {
             FishImageProcessor.Options(
                 tolerance = 14,
                 gridCols = -1,
-                snapLegoColours = true,
+                snapBrickColours = true,
                 maxOut = 900
             )
         )
@@ -74,13 +74,13 @@ class SamplePhotoTest {
                     ArgbImage.green(it) > 180 && ArgbImage.blue(it) > 150
             }
         )
-        assertTrue("expected LEGO-grid output", processed.usedGrid)
+        assertTrue("expected stud-grid output", processed.usedGrid)
         assertTrue("grid was trimmed too far: ${processed.gridCols}", processed.gridCols >= 10)
         assertTrue("grid was not detected", processed.gridRows in 4..14)
         val spritePixels = processed.image.pixels.filter { ArgbImage.alpha(it) > 0 }
         assertTrue("sprite is empty", spritePixels.size > 500)
         assertTrue(
-            "sprite lost its LEGO colour",
+            "sprite lost its brick colour",
             spritePixels.any { ArgbImage.red(it) > ArgbImage.green(it) + 30 }
         )
 
@@ -103,7 +103,7 @@ class SamplePhotoTest {
     }
 
     private fun loadSample(): ArgbImage {
-        val stream = javaClass.classLoader!!.getResourceAsStream("samples/lego-fish-photo.bin")
+        val stream = javaClass.classLoader!!.getResourceAsStream("samples/brick-fish-photo.bin")
         assertNotNull("missing sample resource", stream)
         val bytes = stream!!.readBytes()
         val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)

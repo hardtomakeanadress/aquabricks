@@ -151,7 +151,7 @@ class SendDialog(
             setOnClickListener {
                 val parsed = TankAddress.parse(manualInput.text.toString())
                 if (parsed == null) {
-                    statusText.text = "TYPE A TV ADDRESS LIKE 192.168.0.178:8765"
+                    statusText.text = "TYPE A TV ADDRESS LIKE 192.0.2.10:8765"
                     statusText.setTextColor(ContextCompat.getColor(activity, R.color.coral))
                 } else {
                     sendTo(parsed.first, parsed.second, "the tank")

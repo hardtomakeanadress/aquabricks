@@ -19,10 +19,10 @@ a JDK and the Android SDK; instrumented tests need an Android device or emulator
 
 | Test | What it proves |
 |------|----------------|
-| `FishImageProcessorTest` | auto-crop bounds, perspective warp colour preservation, background removal, stud-grid dimensions, no-fish error, noisy backgrounds, brick-mosaic fallback when no lattice is found, concave-crop rejection, fallback LEGO-colour matching, empty-grid rejection |
-| `GridAndColourTest` | detects a known stud pitch/count, samples flat brick faces rather than stud highlights/gaps, snaps a 2×2 brick to one LEGO colour, palette-off preserves an off-palette colour, sRGB gamma 2.4 picks the correct palette entry, reconciles silhouette pitches, samples at a detected lattice origin |
+| `FishImageProcessorTest` | auto-crop bounds, perspective warp colour preservation, background removal, stud-grid dimensions, no-fish error, noisy backgrounds, brick-mosaic fallback when no lattice is found, concave-crop rejection, fallback brick-colour matching, empty-grid rejection |
+| `GridAndColourTest` | detects a known stud pitch/count, samples flat brick faces rather than stud highlights/gaps, snaps a 2×2 brick to one brick colour, palette-off preserves an off-palette colour, sRGB gamma 2.4 picks the correct palette entry, reconciles silhouette pitches, samples at a detected lattice origin |
 | `SamplePhotoTest` | a realistic synthetic photo (textured baseplate, studs, shadows, noise, tilted camera) becomes a transparent auto-grid sprite; auto stud count is correct and the cream eye survives |
-| `WhitePaperScanTest` | a real red-fish-on-white-paper scan keeps a plausible 2D stud grid instead of collapsing to one row; paper shadow is removed while the grey brick core survives at low and high cutout settings; output is rebuilt as LEGO bricks |
+| `WhitePaperScanTest` | a real red-fish-on-white-paper scan keeps a plausible 2D stud grid instead of collapsing to one row; paper shadow is removed while the grey brick core survives at low and high cutout settings; output is rebuilt as a brick sprite |
 | `BrickRendererTest` | detected cells become a studded, bevelled brick surface with thin dark joints between adjacent bricks; smooth-shape fallback keeps small tabs while adding studs and joints |
 | `CropQuadViewTest` | dragging a crop corner draws the magnifier loupe (real Skia rendering) and cannot make the crop concave |
 | `FaceDialogTest` | changing the eye model keeps a position already dragged in the editor |
@@ -109,7 +109,7 @@ Or use the helper:
 ```bash
 ./scripts/run_device_tests.sh          # both apps on one attached device
 # when several devices are attached, set ANDROID_SERIAL explicitly
-TV_IP=192.168.0.178 ./scripts/run_device_tests.sh   # also `adb connect` the TV
+TV_IP=192.0.2.10 ./scripts/run_device_tests.sh   # substitute your TV's IP
 ```
 
 ### Chromecast HD setup for instrumented tests
@@ -119,8 +119,8 @@ TV_IP=192.168.0.178 ./scripts/run_device_tests.sh   # also `adb connect` the TV
    HD uses pairing codes on current firmware).
 3. From the build machine, discover the pairing endpoint and pair:
    `adb mdns services` (look for `_adb-tls-pairing._tcp`), then
-   `adb pair 192.168.0.178:<pairPort> <six-digit-code>`.
-4. Connect to the advertised debug port (`adb connect 192.168.0.178:<debugPort>`)
+   `adb pair 192.0.2.10:<pairPort> <six-digit-code>`.
+4. Connect to the advertised debug port (`adb connect 192.0.2.10:<debugPort>`)
    and use the full serial from `adb devices` as `ANDROID_SERIAL`.
 5. Run `./scripts/run_device_tests.sh` with that `ANDROID_SERIAL`.
 
@@ -136,10 +136,10 @@ and run the scanner tests. Camera permission is not needed for the editor test;
 
 The automated suite cannot judge whether a fish *looks* right. Before shipping:
 
-- [ ] Scan a real flat LEGO fish on a baseplate; the cutout removes the baseplate.
+- [ ] Scan a real flat brick fish on a baseplate; the cutout removes the baseplate.
 - [ ] Check the **AUTO GRID** stud count matches the actual build (e.g. 14×8).
-- [ ] Confirm brick colours match: red stays LEGO red, orange stays orange, and a
-      light/cream eye brick survives. Toggle **Match LEGO colours** off to compare.
+- [ ] Confirm brick colours match: red stays red, orange stays orange, and a
+      light/cream eye brick survives. Toggle **Match brick colours** off to compare.
 - [ ] Pick a happy eye/smile and an angry eye/frown; drag them to different positions
       and confirm the face arrives on the TV exactly where placed.
 - [ ] Flip a fish whose head faces left; it swims head-first in both directions.
@@ -171,7 +171,7 @@ The automated suite cannot judge whether a fish *looks* right. Before shipping:
 - Both debug APKs build, and both instrumentation APK sets compile.
 - Visual artefacts inspected: tank frames, realistic cutout + auto-grid sprite,
   happy/angry face previews, and real Pixel 7 + Chromecast screenshots.
-- **Real-device end-to-end tests passed:** the demo LEGO fish was POSTed to both the
+- **Real-device end-to-end tests passed:** the demo brick fish was POSTed to both the
   phone and the TV, screenshotted, then the app was force-stopped and relaunched; the
   fish persisted. `scripts/phone_e2e.sh` automates this for a phone.
 - **Chromecast performance:** with static scenery baked, animated plants cached in
@@ -192,7 +192,7 @@ now sink and expire, dragged face positions survive model changes, tail phase is
 accumulated instead of derived from absolute uptime, Send is invalidated as soon as
 the crop/settings change, HTTP admission and request duration are bounded (with
 constant-memory header parsing), sRGB uses the 2.4 gamma, the smooth fallback honours
-the LEGO-colour toggle, concave crops are rejected before warping, left-facing pitch
+the brick-colour toggle, concave crops are rejected before warping, left-facing pitch
 is applied after mirroring, and render loops have per-surface generations. Regression
 tests cover the repository overlap, food lifecycle, phase continuity, palette gamma,
 fallback matching, concave crops, theme wrap-around, dragged face positions and the

@@ -10,12 +10,12 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Turns a photo of a flat LEGO fish into a transparent sprite.
+ * Turns a photo of a flat brick fish into a transparent sprite.
  *
  * Pipeline: perspective-correct the four-corner crop, flood the plain background
  * away from the border, trim, estimate the real stud pitch, sample one flat colour
  * per stud (ignoring the central stud highlight and brick gaps), and optionally snap
- * that colour to the LEGO palette. All maths is pure Kotlin on an IntArray, which
+ * that colour to the brick palette. All maths is pure Kotlin on an IntArray, which
  * keeps it fast enough for a live preview and unit-testable.
  */
 object FishImageProcessor {
@@ -24,7 +24,7 @@ object FishImageProcessor {
         val tolerance: Int = 14,
         /** -1 = auto-detect the stud grid, 0 = natural resolution, >=4 = manual columns. */
         val gridCols: Int = -1,
-        val snapLegoColours: Boolean = true,
+        val snapBrickColours: Boolean = true,
         val maxOut: Int = 900
     )
 
@@ -58,16 +58,16 @@ object FishImageProcessor {
                 if (estimate == null) {
                     // No visible stud pitch: keep the exact silhouette (including
                     // small tails) but replace the photo with a brick-stud mosaic.
-                    return brickFallback(tight, options.snapLegoColours)
+                    return brickFallback(tight, options.snapBrickColours)
                 }
-                val grid = resampleGrid(tight, estimate, options.snapLegoColours)
+                val grid = resampleGrid(tight, estimate, options.snapBrickColours)
                 val gridTrimmed = trimTransparent(grid, 0) ?: throw NoFishFoundException()
                 val bricks = BrickRenderer.render(gridTrimmed)
                 return Processed(bricks, gridTrimmed.width, gridTrimmed.height, true, true, true)
             }
             val cols = options.gridCols.coerceIn(4, 40)
             val rows = max(1, (cols * tight.height / tight.width.toFloat()).roundToInt()).coerceAtMost(48)
-            val grid = resampleGrid(tight, cols, rows, options.snapLegoColours)
+            val grid = resampleGrid(tight, cols, rows, options.snapBrickColours)
             val gridTrimmed = trimTransparent(grid, 0) ?: throw NoFishFoundException()
             val bricks = BrickRenderer.render(gridTrimmed)
             return Processed(bricks, gridTrimmed.width, gridTrimmed.height, true, false, true)
@@ -81,7 +81,7 @@ object FishImageProcessor {
         return Processed(natural, 0, 0, false, false)
     }
 
-    private fun brickFallback(tight: ArgbImage, snapLegoColours: Boolean): Processed {
+    private fun brickFallback(tight: ArgbImage, snapBrickColours: Boolean): Processed {
         val aspect = tight.width.toFloat() / tight.height.coerceAtLeast(1)
         val shortSide = 2
         val cols: Int
@@ -93,10 +93,10 @@ object FishImageProcessor {
             cols = shortSide
             rows = (shortSide / aspect).roundToInt().coerceIn(2, 40)
         }
-        // Both paths must obey "Match LEGO colours"; the smooth-tile fallback
+        // Both paths must obey "Match brick colours"; the smooth-tile fallback
         // used to ignore the checkbox entirely.
         val bricks = BrickRenderer.renderSilhouette(tight, cols, rows) { colour ->
-            if (snapLegoColours) snapToLegoPalette(colour) else colour
+            if (snapBrickColours) snapToBrickPalette(colour) else colour
         }
         if (bricks.pixels.none { ArgbImage.alpha(it) > 0 }) {
             throw NoFishFoundException()
@@ -105,7 +105,7 @@ object FishImageProcessor {
     }
 
     /**
-     * Estimates the LEGO stud pitch from the repeating edges of studs/brick gaps.
+     * Estimates the brick stud pitch from the repeating edges of studs/brick gaps.
      * The smallest strong autocorrelation peak is the fundamental stud period; using
      * the harmonic instead would double the stud count and distort brick size.
      */
@@ -129,7 +129,7 @@ object FishImageProcessor {
     }
 
     /**
-     * Reconciles the two axis estimates. A LEGO stud grid is square, so if one
+     * Reconciles the two axis estimates. A brick stud grid is square, so if one
      * axis locked onto a silhouette and the other did not, both grid dimensions
      * must use the supported pitch.
      */
@@ -554,14 +554,14 @@ object FishImageProcessor {
     /**
      * Resamples the sprite onto a grid of studs. Each cell gets one flat colour
      * sampled from the ring around its stud (not the highlight or the gap), then
-     * optionally snapped to the LEGO palette. That keeps two cells belonging to one
+     * optionally snapped to the brick palette. That keeps two cells belonging to one
      * 2x4 brick identical and preserves its apparent size.
      */
     fun resampleGrid(
         source: ArgbImage,
         columns: Int,
         rowsOverride: Int = 0,
-        snapLegoColours: Boolean = true
+        snapBrickColours: Boolean = true
     ): ArgbImage {
         val cols = columns.coerceIn(2, 40)
         val rows = if (rowsOverride in 1..48) {
@@ -577,7 +577,7 @@ object FishImageProcessor {
                 val x0 = cx * source.width / cols
                 val x1 = max(x0 + 1, (cx + 1) * source.width / cols)
                 out[cy * cols + cx] = sampleCellColour(
-                    source, x0, y0, min(x1, source.width), min(y1, source.height), snapLegoColours
+                    source, x0, y0, min(x1, source.width), min(y1, source.height), snapBrickColours
                 ) ?: 0
             }
         }
@@ -592,7 +592,7 @@ object FishImageProcessor {
     fun resampleGrid(
         source: ArgbImage,
         estimate: GridEstimate,
-        snapLegoColours: Boolean = true
+        snapBrickColours: Boolean = true
     ): ArgbImage {
         val cols = estimate.columns.coerceIn(2, 40)
         val rows = estimate.rows.coerceIn(1, 48)
@@ -613,7 +613,7 @@ object FishImageProcessor {
                     y0.coerceIn(0, source.height - 1),
                     x1.coerceIn(1, source.width),
                     y1.coerceIn(1, source.height),
-                    snapLegoColours
+                    snapBrickColours
                 ) ?: 0
             }
         }
@@ -626,7 +626,7 @@ object FishImageProcessor {
         y0: Int,
         x1: Int,
         y1: Int,
-        snapLegoColours: Boolean
+        snapBrickColours: Boolean
     ): Int? {
         val cellWidth = x1 - x0
         val cellHeight = y1 - y0
@@ -692,14 +692,14 @@ object FishImageProcessor {
             histogramMedian(greenHistogram, half),
             histogramMedian(blueHistogram, half)
         )
-        return if (snapLegoColours) snapToLegoPalette(sampled) else sampled
+        return if (snapBrickColours) snapToBrickPalette(sampled) else sampled
     }
 
-    private fun snapToLegoPalette(color: Int): Int {
+    private fun snapToBrickPalette(color: Int): Int {
         var best = color
         var bestDistance = Float.MAX_VALUE
-        for ((index, paletteColour) in LEGO_PALETTE.withIndex()) {
-            val distance = labDistance(color, LEGO_PALETTE_LAB[index])
+        for ((index, paletteColour) in BRICK_PALETTE.withIndex()) {
+            val distance = labDistance(color, BRICK_PALETTE_LAB[index])
             if (distance < bestDistance) {
                 bestDistance = distance
                 best = paletteColour
@@ -745,7 +745,7 @@ object FishImageProcessor {
         return floatArrayOf(116f * fy - 16f, 500f * (fx - fy), 200f * (fy - fz))
     }
 
-    private val LEGO_PALETTE = intArrayOf(
+    private val BRICK_PALETTE = intArrayOf(
         0xFFF4F4F4.toInt(), // White
         0xFFA0A5A9.toInt(), // Light Bluish Gray
         0xFF6C6E68.toInt(), // Dark Bluish Gray
@@ -780,8 +780,8 @@ object FishImageProcessor {
         0xFFAA7F2E.toInt()  // Pearl Gold
     )
 
-    private val LEGO_PALETTE_LAB: Array<FloatArray> by lazy {
-        LEGO_PALETTE.map { rgbToLab(it) }.toTypedArray()
+    private val BRICK_PALETTE_LAB: Array<FloatArray> by lazy {
+        BRICK_PALETTE.map { rgbToLab(it) }.toTypedArray()
     }
 
     fun upscaleNearest(source: ArgbImage, targetLongSide: Int): ArgbImage {

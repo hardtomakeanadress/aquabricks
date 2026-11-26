@@ -134,7 +134,7 @@ class FishImageProcessorTest {
     }
 
     @Test
-    fun smoothFallbackHonoursLegoColourMatching() {
+    fun smoothFallbackHonoursBrickColourMatching() {
         val width = 220
         val height = 140
         val custom = ArgbImage.argb(255, 40, 120, 120)
@@ -148,16 +148,16 @@ class FishImageProcessorTest {
         val snapped = FishImageProcessor.process(
             image,
             quad,
-            FishImageProcessor.Options(tolerance = 20, gridCols = -1, snapLegoColours = true)
+            FishImageProcessor.Options(tolerance = 20, gridCols = -1, snapBrickColours = true)
         )
         val raw = FishImageProcessor.process(
             image,
             quad,
-            FishImageProcessor.Options(tolerance = 20, gridCols = -1, snapLegoColours = false)
+            FishImageProcessor.Options(tolerance = 20, gridCols = -1, snapBrickColours = false)
         )
 
         val mediumAzure = ArgbImage.argb(255, 0x36, 0xAE, 0xBF)
-        assertTrue("snapped fallback lost the LEGO palette", snapped.image.pixels.any { it == mediumAzure })
+        assertTrue("snapped fallback lost the brick palette", snapped.image.pixels.any { it == mediumAzure })
         val preserved = raw.image.pixels.any { colour ->
             ArgbImage.alpha(colour) > 0 &&
                 abs(ArgbImage.red(colour) - 40) <= 12 &&

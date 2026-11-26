@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates scripts/demo-fish.png: a clearly fish-shaped LEGO-coloured sprite
+"""Generates scripts/demo-fish.png: a clearly fish-shaped brick-coloured sprite
 used by the phone E2E script and for demos. It is not used by the scanner tests."""
 from PIL import Image
 import os
@@ -7,9 +7,9 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CELL = 24
 
-RED = (201, 26, 9, 255)       # LEGO Red
-ORANGE = (254, 138, 24, 255)  # LEGO Orange
-YELLOW = (242, 205, 55, 255)  # LEGO Yellow
+RED = (201, 26, 9, 255)       # brick Red
+ORANGE = (254, 138, 24, 255)  # brick Orange
+YELLOW = (242, 205, 55, 255)  # brick Yellow
 WHITE = (244, 244, 244, 255)
 BLACK = (27, 42, 52, 255)
 

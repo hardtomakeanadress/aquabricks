@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Regression for a real scan of a red LEGO fish on white paper. The crop is valid,
+ * Regression for a real scan of a red brick fish on white paper. The crop is valid,
  * but the old pitch detector trusted a vertical peak from the fish silhouette and
  * produced a 13x1 grid, squashing the fish into a long strip on the TV.
  */
@@ -24,7 +24,7 @@ class WhitePaperScanTest {
             FishImageProcessor.Options(
                 tolerance = 20,
                 gridCols = -1,
-                snapLegoColours = true,
+                snapBrickColours = true,
                 maxOut = 900
             )
         )
@@ -33,7 +33,7 @@ class WhitePaperScanTest {
         val artifacts = java.io.File("build/test-artifacts").apply { mkdirs() }
         TestPng.write(processed.image, java.io.File(artifacts, "white-paper-sprite.png"))
         assertTrue("auto grid was not used", processed.usedGrid && processed.autoGrid)
-        assertTrue("the sprite was not rebuilt as LEGO bricks", processed.brickized)
+        assertTrue("the image was not rebuilt as a brick sprite", processed.brickized)
         assertTrue(
             "brick shading is missing",
             processed.image.pixels.filter { ArgbImage.alpha(it) > 0 }.toHashSet().size > 4

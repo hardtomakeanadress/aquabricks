@@ -34,7 +34,7 @@ class Fish(
     // largest depth; the draw code scales it down when the fish is farther away.
     private val maxDrawHeight: Float = height * 0.13f
     // Keep twice as many texture pixels as the fish occupies on screen. The fish
-    // is still drawn small, but LEGO studs, faces and the thin brick joints
+    // is still drawn small, but brick studs, faces and the thin brick joints
     // survive downscaling instead of turning into aliased mush.
     val sprite: Bitmap = normalise(
         bitmap,

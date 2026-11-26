@@ -157,7 +157,7 @@ class AquariumSceneTest {
     fun sceneDrawsDecorFishAndAnimation() {
         val scene = AquariumScene(640, 360)
         scene.setLoaded(true)
-        scene.setServerInfo("192.168.0.178", 8765, true)
+        scene.setServerInfo("192.0.2.10", 8765, true)
 
         val empty = render(scene, steps = 6)
         savePng(empty, "tv-empty.png")

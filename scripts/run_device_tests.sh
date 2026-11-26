@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the instrumented suites on a connected Android device/emulator.
 #
-#   TV_IP=192.168.0.178 ./scripts/run_device_tests.sh
+#   TV_IP=192.0.2.10 ./scripts/run_device_tests.sh
 #   ANDROID_SERIAL=emulator-5554 ./scripts/run_device_tests.sh
 #
 # With more than one device attached, set ANDROID_SERIAL explicitly.
